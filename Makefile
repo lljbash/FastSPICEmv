@@ -1,8 +1,9 @@
-CXX ?= g++-7
+CXX ?= g++
 SRCS = calc.cc taskA.cc taskB.cc
 LIBNAME = libcompetition.so
-CXXOPTS = -O3 -DNDEBUG -fopenmp -funroll-loops -march=native#-mavx -mavx2 -mfma
-#CXXOPTS = -O3 -DNDEBUG -fopenmp -funroll-loops
+CXXOPTS = -O3 -DNDEBUG -fopenmp -funroll-loops -mavx512f
+#CXXOPTS = -g -fopenmp
+#CXXOPTS = -O2 -DNDEBUG -fopenmp
 CXXOPTS += -std=c++17 -Wall -Wextra -Wconversion
 
 all:$(OBJS)
