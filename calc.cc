@@ -21,25 +21,16 @@ void matrix_calc_taskA_subtask(const std::vector<TaskMatrixInfoA>& subtask) {
     }
 }
 
-int64_t estimate_taskA_computation(int64_t rc, int64_t nnz) {
-    return rc + nnz;
-}
-
 void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
     const int jobs = omp_get_max_threads();
     printf("jobs: %d\n", jobs);
 
-    int64_t total_computation = 0;
-    static std::vector<int> nnz;
-    nnz.clear();
+    int64_t total_row = 0;
     for (int i = 0; i < size; ++i) {
-        nnz.push_back(0);
-        for (int j = 0; j < ptr[i]->rowArraySize; ++j) {
-            nnz[i] += ptr[i]->rowOffset[j + 1] - ptr[i]->rowOffset[j];
-        }
-        total_computation += estimate_taskA_computation(ptr[i]->rowArraySize, nnz[i]);
+        total_row += ptr[i]->rowArraySize;
     }
-    int64_t computation_per_job = total_computation / jobs;
+    const int64_t row_per_job = total_row / jobs + 1;
+    const int64_t offset_threshold = row_per_job - 1 > 40 ? row_per_job - 1 : 40;
 
     static std::vector<std::vector<TaskMatrixInfoA>> subtasks;
     subtasks.resize(jobs);
@@ -47,39 +38,49 @@ void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
         subtasks[i].clear();
     }
     int current_job = 0;
-    int64_t current_computation = 0;
+    int64_t current_job_rows = 0;
     for (int i = 0; i < size; ++i) {
-        int64_t remain_computation = estimate_taskA_computation(ptr[i]->rowArraySize, nnz[i]);
-        int current_rc = 0;
-        while (remain_computation > 0) {
-            if (current_computation >= computation_per_job) {
-                ++current_job;
-                current_computation = 0;
-            }
-            if (current_computation + remain_computation <= computation_per_job) {
-                subtasks[current_job].push_back(*ptr[i]);
-                TaskMatrixInfoA& subtask = subtasks[current_job].back();
-                subtask.rowArray += current_rc;
-                subtask.rowArraySize -= current_rc;
-                remain_computation = 0;
-            }
-            else {
-                int next_rc = current_rc;
-                int64_t next_computation = 0;
-                while (current_computation + next_computation < computation_per_job) {
-                    int r_nnz = ptr[i]->rowOffset[next_rc + 1] - ptr[i]->rowOffset[next_rc];
-                    next_computation += estimate_taskA_computation(1, r_nnz);
-                    ++next_rc;
+        const int row_size = ptr[i]->rowArraySize;
+        int* row_array = ptr[i]->rowArray;
+        std::sort(row_array, row_array + row_size);
+        int row_start = 0;
+        for (int i = 0; i < row_size; ++i) {
+            if (i + 1 == row_size || row_array[i + 1] != row_array[i] + 1) {
+                int row_end = i + 1;
+                int current_row = row_start;
+                while (current_row < row_end) {
+                    int remain_rows = row_end - current_row;
+                    subtasks[current_job].push_back(*ptr[i]);
+                    auto& subtask = subtasks[current_job].back();
+                    subtask.rowArray += current_row;
+                    if (current_job_rows + remain_rows <= row_per_job + offset_threshold || current_job == jobs - 1) {
+                        subtask.rowArraySize = remain_rows;
+                    }
+                    else {
+                        subtask.rowArraySize = static_cast<int>(row_per_job - current_job_rows);
+                    }
+                    current_job_rows += subtask.rowArraySize;
+                    current_row += subtask.rowArraySize;
+                    if (current_job_rows >= row_per_job - offset_threshold && current_job != jobs - 1) {
+                        current_job++;
+                        current_job_rows = 0;
+                    }
                 }
-                subtasks[current_job].push_back(*ptr[i]);
-                TaskMatrixInfoA& subtask = subtasks[current_job].back();
-                subtask.rowArray += current_rc;
-                subtask.rowArraySize = next_rc - current_rc;
-                remain_computation -= next_computation;
-                current_rc = next_rc;
+                row_start = row_end;
             }
         }
     }
+
+#if 1
+    FILE* debug = fopen("debug.txt", "a");
+    for (const auto& sts : subtasks) {
+        for (const auto& st: sts) {
+            fprintf(debug, "%d ", st.rowArraySize);
+        }
+        fprintf(debug, "\n");
+    }
+    fclose(debug);
+#endif
 
 #pragma omp parallel
     {
