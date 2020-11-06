@@ -136,11 +136,10 @@ void spmv_segmentedsum_simd(segmentedsum_t *seg, \
         sh = _mm512_mask_add_pd(sh, masks[mi+4], BROADCASTD7(sl), sh);
         sp = BROADCASTD7(sh);
 
-        sl = _mm512_add_pd(sl, _mm512_maskz_expandloadu_pd(masks[mi+5], y + y_offsets[oi]));
-        sh = _mm512_add_pd(sh, _mm512_maskz_expandloadu_pd(masks[mi+6], y + y_offsets[oi+1]));
-        
-        _mm512_mask_compressstoreu_pd(y + y_offsets[oi  ], masks[mi+5], sl);
-        _mm512_mask_compressstoreu_pd(y + y_offsets[oi+1], masks[mi+6], sh);
+        _mm512_mask_compressstoreu_pd(y + y_offsets[oi  ], masks[mi+5], \
+            _mm512_add_pd(sl, _mm512_maskz_expandloadu_pd(masks[mi+5], y + y_offsets[oi])));
+        _mm512_mask_compressstoreu_pd(y + y_offsets[oi+1], masks[mi+6], \
+            _mm512_add_pd(sh, _mm512_maskz_expandloadu_pd(masks[mi+6], y + y_offsets[oi+1])));
     }
     
     int i = y_offsets[t*2];
@@ -155,5 +154,144 @@ void spmv_segmentedsum_simd(segmentedsum_t *seg, \
     while(nz_end == offsets[i + 1]) {
         y[i++] = v;
         v = y[i];
+    }
+}
+
+void spmv_segmentedsum_simd_taskB(segmentedsum_t *seg, \
+    int begin_row, int end_row, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha) {
+    const __m512d alpha_v = _mm512_set1_pd(alpha);
+    const __m512i idxl = _mm512_set_epi64(14,12,10,8,6,4,2,0);
+    const __m512i idxh = _mm512_set_epi64(15,13,11,9,7,5,3,1);
+    const __m512i idx7 = _mm512_set1_epi64(7);
+    __mmask8 *masks = seg->masks;
+    int head = seg->head;
+    int *y_offsets = seg->y_offsets;
+    int nz_begin = offsets[begin_row], nz_end = offsets[end_row];
+    int p_begin = (nz_begin <= head) ? head : (nz_begin + (16 - ((nz_begin - head) & 15) & 15));
+    int p, t;
+    __m512d sp0 = _mm512_setzero_pd(), sp1 = _mm512_setzero_pd();
+
+    for(int i = begin_row; offsets[i] < p_begin && i < end_row; ++i) {
+        int end = (offsets[i + 1] < p_begin) ? offsets[i + 1] : p_begin;
+        double v0 = 0.0, v1 = 0.0;
+        for(int p = offsets[i]; p < end; ++p) {
+            v0 += values[p*2] * x[indices[p]];
+            v1 += values[p*2+1] * x[indices[p]];
+            A[p] = values[p*2] + alpha * values[p*2+1];
+        }
+        IG[i] += v0;
+        IC[i] += v1;
+        R[i] = D[i*2] - v0;
+        H[i] = D[i*2+1] - v1;
+    }
+
+    for(p = p_begin, t = (p_begin - head) / 16; p < nz_end - 15; p += 16, ++t) {
+        int mi = t * MASKS_PER_TILE, oi = t * VEC_PER_TILE;
+        __m512d sl0, sh0, sl0_old;
+        __m512d sl1, sh1, sl1_old;
+        __m512d valla = _mm512_loadu_pd(values + p * 2);
+        __m512d vallb = _mm512_loadu_pd(values + p * 2 + 8);
+        __m512d valha = _mm512_loadu_pd(values + p * 2 + 16);
+        __m512d valhb = _mm512_loadu_pd(values + p * 2 + 24);
+        __m512i idx = _mm512_loadu_si512(indices + p);
+        __m512d x_gthrl = _mm512_i32gather_pd(LOI(idx), x, 8);
+        __m512d x_gthrh = _mm512_i32gather_pd(HII(idx), x, 8);
+        __m512d vallx = PACKD0246(valla, valla);
+        __m512d vally = PACKD1357(valla, valla);
+        __m512d valhx = PACKD0246(valhb, valhb);
+        __m512d valhy = PACKD1357(valhb, valhb);
+
+        _mm512_storeu_pd(A + p,     _mm512_fmadd_pd(alpha_v, vally, vallx));
+        _mm512_storeu_pd(A + p + 8, _mm512_fmadd_pd(alpha_v, valhy, valhx));
+
+        sl0 = _mm512_mul_pd(vallx, x_gthrl);
+        sl1 = _mm512_mul_pd(vally, x_gthrl);
+        sh0 = _mm512_mul_pd(valhx, x_gthrh);
+        sh1 = _mm512_mul_pd(valhy, x_gthrh);
+
+        sl0_old = sl0; sl1_old = sl1;
+        sl0 = PACKD0246(sl0, sh0);
+        sl1 = PACKD0246(sl1, sh1);
+        sh0 = PACKD1357(sl0_old, sh0);
+        sh1 = PACKD1357(sl1_old, sh1);
+        sh0 = _mm512_mask_add_pd(sh0, masks[mi], sl0, sh0);
+        sh1 = _mm512_mask_add_pd(sh1, masks[mi], sl1, sh1);
+
+        sl0_old = sl0; sl1_old = sl1;
+        sl0 = SHUFFLED0246(sl0, sh0);
+        sl1 = SHUFFLED0246(sl1, sh1);
+        sh0 = SHUFFLED1357(sl0_old, sh0);
+        sh1 = SHUFFLED1357(sl1_old, sh1);
+        sh0 = _mm512_mask_add_pd(sh0, masks[mi+1], BROADCASTD1357(sl0), sh0);
+        sh1 = _mm512_mask_add_pd(sh1, masks[mi+1], BROADCASTD1357(sl1), sh1);
+
+        sl0_old = sl0; sl1_old = sl1;
+        sl0 = SHUFFLE2D0145(sl0, sh0);
+        sl1 = SHUFFLE2D0145(sl1, sh1);
+        sh0 = SHUFFLE2D2367(sl0_old, sh0);
+        sh1 = SHUFFLE2D2367(sl1_old, sh1);
+        sh0 = _mm512_mask_add_pd(sh0, masks[mi+2], BROADCASTD37(sl0), sh0);
+        sh1 = _mm512_mask_add_pd(sh1, masks[mi+2], BROADCASTD37(sl1), sh1);
+        
+        sl0_old = sl0; sl1_old = sl1;
+        sl0 = PACKD0123(sl0, sh0);
+        sl1 = PACKD0123(sl1, sh1);
+        sh0 = PACKD4567(sl0_old, sh0);
+        sh1 = PACKD4567(sl1_old, sh1);
+        sl0 = _mm512_mask_add_pd(sl0, masks[mi+3], sp0, sl0);
+        sl1 = _mm512_mask_add_pd(sl1, masks[mi+3], sp1, sl1);
+        sh0 = _mm512_mask_add_pd(sh0, masks[mi+4], BROADCASTD7(sl0), sh0);
+        sh0 = _mm512_mask_add_pd(sh1, masks[mi+4], BROADCASTD7(sl1), sh1);
+        sp0 = BROADCASTD7(sh0);
+        sp1 = BROADCASTD7(sh1);
+        
+        _mm512_mask_compressstoreu_pd(IG + y_offsets[oi  ], masks[mi+5], \
+            _mm512_add_pd(_mm512_maskz_expandloadu_pd(masks[mi+5], IG + y_offsets[oi]), sl0));
+        _mm512_mask_compressstoreu_pd(IC + y_offsets[oi  ], masks[mi+5], \
+            _mm512_add_pd(_mm512_maskz_expandloadu_pd(masks[mi+5], IC + y_offsets[oi]), sl1));
+        _mm512_mask_compressstoreu_pd(IG + y_offsets[oi+1], masks[mi+6], \
+            _mm512_add_pd(_mm512_maskz_expandloadu_pd(masks[mi+6], IG + y_offsets[oi+1]), sh0));
+        _mm512_mask_compressstoreu_pd(IC + y_offsets[oi+1], masks[mi+6], \
+            _mm512_add_pd(_mm512_maskz_expandloadu_pd(masks[mi+6], IC + y_offsets[oi+1]), sh1));
+
+        __m512d dla = _mm512_loadu_pd(D + y_offsets[oi] * 2);
+        __m512d dlb = _mm512_loadu_pd(D + y_offsets[oi] * 2 + 8);
+        __m512d dha = _mm512_loadu_pd(D + y_offsets[oi+1] * 2);
+        __m512d dhb = _mm512_loadu_pd(D + y_offsets[oi+1] * 2 + 8);
+
+        _mm512_mask_compressstoreu_pd(R + y_offsets[oi  ], masks[mi+5], \
+            _mm512_sub_pd(_mm512_maskz_expand_pd(masks[mi+5], PACKD0246(dla, dlb)), sl0));
+        _mm512_mask_compressstoreu_pd(H + y_offsets[oi  ], masks[mi+5], \
+            _mm512_sub_pd(_mm512_maskz_expand_pd(masks[mi+5], PACKD1357(dla, dlb)), sl1));
+        _mm512_mask_compressstoreu_pd(R + y_offsets[oi+1], masks[mi+6], \
+            _mm512_sub_pd(_mm512_maskz_expand_pd(masks[mi+6], PACKD0246(dha, dhb)), sh0));
+        _mm512_mask_compressstoreu_pd(H + y_offsets[oi+1], masks[mi+6], \
+            _mm512_sub_pd(_mm512_maskz_expand_pd(masks[mi+6], PACKD1357(dha, dhb)), sh1));
+    }
+    
+    int i = y_offsets[t*2];
+    double v0 = _mm512_mask_reduce_add_pd((p == offsets[i]) ? 0 : 1, sp0);
+    double v1 = _mm512_mask_reduce_add_pd((p == offsets[i]) ? 0 : 1, sp1);
+    for(; p < nz_end; ++p) {
+        while(p == offsets[i + 1]) {
+            IG[i] += v0;
+            IC[i] += v1;
+            R[i] = D[i*2] - v0;
+            H[i] = D[i*2+1] - v1;
+            ++i;
+            v0 = 0.0, v1 = 0.0;
+        }
+        v0 += values[p*2] * x[indices[p]];
+        v1 += values[p*2+1] * x[indices[p]];
+        A[p] = values[p*2] + alpha * values[p*2+1];
+    }
+    while(nz_end == offsets[i + 1]) {
+        IG[i] += v0;
+        IC[i] += v1;
+        R[i] = D[i*2] - v0;
+        H[i] = D[i*2+1] - v1;
+        ++i;
+        v0 = 0.0, v1 = 0.0;
     }
 }

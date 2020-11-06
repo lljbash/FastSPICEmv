@@ -15,7 +15,6 @@ typedef struct {
     int head, n_tiles;
 } ell_t;
 
-
 #define MASK0123  0x0F
 #define MASK4567  0xF0 //_mm512_knot(MASK0123)
 #define MASK0145  0x33
@@ -60,14 +59,51 @@ typedef struct {
 #define PACKI0123(x, y)     _mm512_mask_alignr_epi64(x, MASK4567, y, y, 4)
 #define PACKI4567(x, y)     _mm512_mask_alignr_epi64(y, MASK0123, x, x, 4)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+// for taskA, there is no suffix appended
+// for taskB, the function names end with `taskB` (SpMV fused with ADD) or `taskB_separate_add` (SpMV separated with ADD)
+// IG and IC are the summed result, R and H are the substracted result
+// D is the substracted vector, A is the summed matrix
+
+// b : row begin, e : row end
+// for example, b = 10, e = 15 means 5 rows [10,11,12,13,14]
 void spmv_rowwise(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y);
+void spmv_rowwise_taskB(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
+
 void spmv_rowwise_simd(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y);
+void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
+void spmv_rowwise_simd_taskB_separate_add(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
+
 void spmv_segmentedsum(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y);
+void spmv_segmentedsum_taskB(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
 
 void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, const int *indices, const double *values);
 void finalize_segmentedsum(segmentedsum_t *seg);
 void spmv_segmentedsum_simd(segmentedsum_t *seg, \
     int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y);
+void spmv_segmentedsum_simd_taskB(segmentedsum_t *seg, \
+    int begin_row, int end_row, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
+
+// 1 nonzero per row
+void spmv_row_1(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y);
+void spmv_row_1_taskB(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
+
+// long rows
+void spmv_long_rows(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y);
+void spmv_long_rows_taskB(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
+    const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ifndef SPMV_H_ */
