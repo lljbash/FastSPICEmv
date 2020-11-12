@@ -64,25 +64,31 @@ void taskB(
     for (int i = 0; i < rowArraySize; ++i) {
         int row = rowArray[i];
         const int k1 = row * 2;
-        double current = D[k1];
-        double charge = D[k1 + 1];
+
+        double ig = 0;
+        double ic = 0;
 
         for (int p = rowOffset[row]; p < rowOffset[row + 1]; ++p) {
             int col = columnIndice[p];
             const int k = p * 2;
+            ig += valueSpiceMatrix[k] * S[col];
+            ic += valueSpiceMatrix[k + 1] * S[col];
+        }
+        IG[row] += ig;
+        IC[row] += ic;
+        R[row] = D[k1] - ig;
+        H[row] = D[k1 + 1] - ic;
+    }
+
+    for (int i = 0; i < rowArraySize; ++i) {
+        int row = rowArray[i];
+
+        for (int p = rowOffset[row]; p < rowOffset[row + 1]; ++p) {
+            const int k = p * 2;
             double cond = valueSpiceMatrix[k];
             double cap = valueSpiceMatrix[k + 1];
-
-            IG[row] += cond * S[col];
-            IC[row] += cap * S[col];
-
-            current -= valueSpiceMatrix[k] * S[col];
-            charge -= valueSpiceMatrix[k + 1] * S[col];
-
             A[p] = cond + alpha * cap;
         }
-        R[row] = current;
-        H[row] = charge;
     }
 #endif
 }
