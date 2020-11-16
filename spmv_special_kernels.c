@@ -65,10 +65,10 @@ void spmv_row_1_taskB(int b, int e, const int *offsets, const int *indices, cons
         _mm512_storeu_pd(IC + i + 8, _mm512_add_pd(_mm512_loadu_pd(IC + i + 8), v1b));
         __m512d d0a = _mm512_loadu_pd(D + i * 2     ), d1a = _mm512_loadu_pd(D + i * 2 + 8);
         __m512d d0b = _mm512_loadu_pd(D + i * 2 + 16), d1b = _mm512_loadu_pd(D + i * 2 + 24);
-        _mm512_storeu_pd(R + i,     _mm512_add_pd(PACKD0246(d0a, d1a), v0a));
-        _mm512_storeu_pd(H + i,     _mm512_add_pd(PACKD1357(d0a, d1a), v1a));
-        _mm512_storeu_pd(R + i + 8, _mm512_add_pd(PACKD0246(d0b, d1b), v0b));
-        _mm512_storeu_pd(H + i + 8, _mm512_add_pd(PACKD1357(d0b, d1b), v1b));
+        _mm512_storeu_pd(R + i,     _mm512_sub_pd(PACKD0246(d0a, d1a), v0a));
+        _mm512_storeu_pd(H + i,     _mm512_sub_pd(PACKD1357(d0a, d1a), v1a));
+        _mm512_storeu_pd(R + i + 8, _mm512_sub_pd(PACKD0246(d0b, d1b), v0b));
+        _mm512_storeu_pd(H + i + 8, _mm512_sub_pd(PACKD1357(d0b, d1b), v1b));
     }
     /* remainder */
     for(; i < e; ++i) {

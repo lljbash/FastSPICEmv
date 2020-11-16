@@ -29,6 +29,8 @@ void spmv_rowwise_taskB(int b, int e, const int *offsets, const int *indices, co
     }
 }
 
+#ifdef WRONG_ANSWER
+
 void spmv_rowwise_simd(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y) {
     const __m256i step = _mm256_set1_epi32(1), zeroi = _mm256_setzero_si256();
     const __m512d zerod = _mm512_setzero_pd();
@@ -47,7 +49,7 @@ void spmv_rowwise_simd(int b, int e, const int *offsets, const int *indices, con
         __m512d v = _mm512_load_pd(y + i);
         __m256i p = _mm256_loadu_si256((const __m256i*)(offsets + i));
         __m256i pend = _mm256_loadu_si256((const __m256i*)(offsets + i + 1));
-        for(__mmask8 active = _mm256_cmple_epi32_mask(p, pend); 0 != _ktestz_mask8_u8(0xff, active); \
+        for(__mmask8 active = _mm256_cmple_epi32_mask(p, pend); 1 != _ktestz_mask8_u8(0xff, active); \
             p = _mm256_add_epi32(p, step), active = _mm256_cmple_epi32_mask(p, pend)) {
             __m512d val0 = _mm512_mask_i32gather_pd(zerod, active, p, values, 8);
             __m256i idx0 = _mm256_mmask_i32gather_epi32(zeroi, active, p, indices, 4);
@@ -77,7 +79,7 @@ void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indice
         __m256i p = _mm256_loadu_si256((const __m256i*)(offsets + i));
         __m256i pend = _mm256_loadu_si256((const __m256i*)(offsets + i + 1));
 
-        for(__mmask8 active = _mm256_cmple_epi32_mask(p, pend); 0 != _ktestz_mask8_u8(0xff, active); \
+        for(__mmask8 active = _mm256_cmple_epi32_mask(p, pend); 1 != _ktestz_mask8_u8(0xff, active); \
             p = _mm256_add_epi32(p, onei), active = _mm256_cmple_epi32_mask(p, pend)) {
             __m256i p2 = _mm256_slli_epi32(p, 1), p2_1 = _mm256_or_si256(p2, onei);
             __m512d val0 = _mm512_mask_i32gather_pd(zerod, active, p2,   values, 8);
@@ -110,7 +112,6 @@ void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indice
     }
 }
 
-
 void spmv_rowwise_simd_taskB_separate_add(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
     const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha) {
     const __m256i onei = _mm256_set1_epi32(1), zeroi = _mm256_setzero_si256();
@@ -124,7 +125,7 @@ void spmv_rowwise_simd_taskB_separate_add(int b, int e, const int *offsets, cons
         __m256i p = _mm256_loadu_si256((const __m256i*)(offsets + i));
         __m256i pend = _mm256_loadu_si256((const __m256i*)(offsets + i + 1));
 
-        for(__mmask8 active = _mm256_cmple_epi32_mask(p, pend); 0 != _ktestz_mask8_u8(0xff, active); \
+        for(__mmask8 active = _mm256_cmple_epi32_mask(p, pend); 1 != _ktestz_mask8_u8(0xff, active); \
             p = _mm256_add_epi32(p, onei), active = _mm256_cmple_epi32_mask(p, pend)) {
             __m256i p2 = _mm256_slli_epi32(p, 1), p2_1 = _mm256_or_si256(p2, onei);
             __m512d val0 = _mm512_mask_i32gather_pd(zerod, active, p2,   values, 8);
@@ -171,6 +172,8 @@ void spmv_rowwise_simd_taskB_separate_add(int b, int e, const int *offsets, cons
         A[p] = values[p*2] + alpha * values[p*2+1];
     }
 }
+
+#endif
 
 void spmv_segmentedsum(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y) {
     int i, p;

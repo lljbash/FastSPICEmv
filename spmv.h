@@ -9,12 +9,6 @@ typedef struct {
     int head, n_tiles;
 } segmentedsum_t;
 
-typedef struct {
-    int *indices_offsets;
-    int *column_indices;
-    int head, n_tiles;
-} ell_t;
-
 #define MASK0123  0x0F
 #define MASK4567  0xF0 //_mm512_knot(MASK0123)
 #define MASK0145  0x33
