@@ -141,7 +141,7 @@ void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indice
         __m512d val1a = _mm512_loadu_pd(values + p * 2 + 8);
         _mm512_storeu_pd(A + p,      _mm512_fmadd_pd(alpha_v, PACKD1357(val0a, val1a), PACKD0246(val0a, val1a)));
     }
-#endif
+#else
     for(p = offsets[b]; p < pend - 15; p += 16) {  // loop unrolled
         __m512d val0a = _mm512_loadu_pd(values + p * 2);
         __m512d val1a = _mm512_loadu_pd(values + p * 2 + 8);
@@ -154,6 +154,7 @@ void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indice
     for(; p < pend; ++p) {
         A[p] = values[p*2] + alpha * values[p*2+1];
     }
+#endif
 }
 
 #ifdef SCALAR_KERNELS
