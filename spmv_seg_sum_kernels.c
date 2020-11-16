@@ -143,7 +143,7 @@ void spmv_segmentedsum_simd(segmentedsum_t *seg, \
     }
     
     int i = y_offsets[t*2];
-    double v = y[i] + _mm512_mask_reduce_add_pd((p == offsets[i]) ? 0 : 1, sp);
+    double v = y[i] + ((p == offsets[i]) ? 0.0 : _mm512_cvtsd_f64(sp));
     for(; p < nz_end; ++p) {
         while(p == offsets[i + 1]) {
             y[i++] = v;
@@ -271,8 +271,8 @@ void spmv_segmentedsum_simd_taskB(segmentedsum_t *seg, \
     }
     
     int i = y_offsets[t*2];
-    double v0 = _mm512_mask_reduce_add_pd((p == offsets[i]) ? 0 : 1, sp0);
-    double v1 = _mm512_mask_reduce_add_pd((p == offsets[i]) ? 0 : 1, sp1);
+    double v0 = (p == offsets[i]) ? 0.0 : _mm512_cvtsd_f64(sp0);
+    double v1 = (p == offsets[i]) ? 0.0 : _mm512_cvtsd_f64(sp1);
     for(; p < nz_end; ++p) {
         while(p == offsets[i + 1]) {
             IG[i] += v0;
