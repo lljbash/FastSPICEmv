@@ -1,5 +1,3 @@
-#include <stdint.h>
-#include <immintrin.h>
 #include "spmv.h"
 
 #define MASKS_PER_TILE 7
@@ -10,7 +8,7 @@ void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, con
     const __m512i idxl = _mm512_set_epi64(14,12,10,8,6,4,2,0);
     const __m512i idxh = _mm512_set_epi64(15,13,11,9,7,5,3,1);
     const __m512i idx7 = _mm512_set1_epi64(7);
-    int head = (8 - ((((uintptr_t)values) >> 3) & 7)) & 7;
+    int head = (8 - (int)((((uintptr_t)values) >> 3) & 7)) & 7;
     int nnz = offsets[m];
     int n_tiles = (nnz - head) >> 4;
     int i, p, mi, oi;
@@ -85,7 +83,7 @@ void finalize_segmentedsum(segmentedsum_t *seg) {
     free(seg->y_offsets);
 }
 
-void spmv_segmentedsum_simd(segmentedsum_t *seg, \
+void spmv_segmentedsum_simd_taskA(segmentedsum_t *seg, \
     int begin_row, int end_row, const int *offsets, const int *indices, const double *values, const double *x, double *y) {
     const __m512i idxl = _mm512_set_epi64(14,12,10,8,6,4,2,0);
     const __m512i idxh = _mm512_set_epi64(15,13,11,9,7,5,3,1);
