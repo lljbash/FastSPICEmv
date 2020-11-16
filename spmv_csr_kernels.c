@@ -92,8 +92,8 @@ void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indice
         _mm512_storeu_pd(IG + i, _mm512_add_pd(_mm512_loadu_pd(IG + i), v0));
         _mm512_storeu_pd(IC + i, _mm512_add_pd(_mm512_loadu_pd(IC + i), v1));
         __m512d d0 = _mm512_loadu_pd(D + i * 2), d1 = _mm512_loadu_pd(D + i * 2 + 8);
-        _mm512_storeu_pd(R + i, _mm512_add_pd(PACKD0246(d0, d1), v0));
-        _mm512_storeu_pd(H + i, _mm512_add_pd(PACKD1357(d0, d1), v1));
+        _mm512_storeu_pd(R + i, _mm512_sub_pd(PACKD0246(d0, d1), v0));
+        _mm512_storeu_pd(H + i, _mm512_sub_pd(PACKD1357(d0, d1), v1));
     }
     /* remainder */
     for(; i < e; ++i) {
@@ -137,8 +137,8 @@ void spmv_rowwise_simd_taskB_separate_add(int b, int e, const int *offsets, cons
         _mm512_storeu_pd(IG + i, _mm512_add_pd(_mm512_loadu_pd(IG + i), v0));
         _mm512_storeu_pd(IC + i, _mm512_add_pd(_mm512_loadu_pd(IC + i), v1));
         __m512d d0 = _mm512_loadu_pd(D + i * 2), d1 = _mm512_loadu_pd(D + i * 2 + 8);
-        _mm512_storeu_pd(R + i, _mm512_add_pd(PACKD0246(d0, d1), v0));
-        _mm512_storeu_pd(H + i, _mm512_add_pd(PACKD1357(d0, d1), v1));
+        _mm512_storeu_pd(R + i, _mm512_sub_pd(PACKD0246(d0, d1), v0));
+        _mm512_storeu_pd(H + i, _mm512_sub_pd(PACKD1357(d0, d1), v1));
     }
     /* remainder */
     for(; i < e; ++i) {

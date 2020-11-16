@@ -197,10 +197,10 @@ void spmv_segmentedsum_simd_taskB(segmentedsum_t *seg, \
         __m512i idx = _mm512_loadu_si512(indices + p);
         __m512d x_gthrl = _mm512_i32gather_pd(LOI(idx), x, 8);
         __m512d x_gthrh = _mm512_i32gather_pd(HII(idx), x, 8);
-        __m512d vallx = PACKD0246(valla, valla);
-        __m512d vally = PACKD1357(valla, valla);
-        __m512d valhx = PACKD0246(valhb, valhb);
-        __m512d valhy = PACKD1357(valhb, valhb);
+        __m512d vallx = PACKD0246(valla, vallb);
+        __m512d vally = PACKD1357(valla, vallb);
+        __m512d valhx = PACKD0246(valha, valhb);
+        __m512d valhy = PACKD1357(valha, valhb);
 
         _mm512_storeu_pd(A + p,     _mm512_fmadd_pd(alpha_v, vally, vallx));
         _mm512_storeu_pd(A + p + 8, _mm512_fmadd_pd(alpha_v, valhy, valhx));
