@@ -1,4 +1,7 @@
 #include "taskB.h"
+#include "spmv.h"
+
+//#define LONGROW_SIMD
 
 void taskB(
     const double* valueSpiceMatrix,
@@ -63,32 +66,34 @@ void taskB(
 #else
     for (int i = 0; i < rowArraySize; ++i) {
         int row = rowArray[i];
-        const int k1 = row * 2;
 
-        double ig = 0;
-        double ic = 0;
-
-        for (int p = rowOffset[row]; p < rowOffset[row + 1]; ++p) {
-            int col = columnIndice[p];
-            const int k = p * 2;
-            ig += valueSpiceMatrix[k] * S[col];
-            ic += valueSpiceMatrix[k + 1] * S[col];
+#ifdef LONGROW_SIMD
+        if (rowOffset[row + 1] - rowOffset[row] >= 32) {
+            spmv_long_row_taskB(row, rowOffset, columnIndice, valueSpiceMatrix, S, D, IG, IC, R, H, A, alpha);
         }
-        IG[row] += ig;
-        IC[row] += ic;
-        R[row] = D[k1] - ig;
-        H[row] = D[k1 + 1] - ic;
-    }
+        else {
+#endif
+            const int k1 = row * 2;
 
-    for (int i = 0; i < rowArraySize; ++i) {
-        int row = rowArray[i];
+            double ig = 0;
+            double ic = 0;
 
-        for (int p = rowOffset[row]; p < rowOffset[row + 1]; ++p) {
-            const int k = p * 2;
-            double cond = valueSpiceMatrix[k];
-            double cap = valueSpiceMatrix[k + 1];
-            A[p] = cond + alpha * cap;
+            for (int p = rowOffset[row]; p < rowOffset[row + 1]; ++p) {
+                int col = columnIndice[p];
+                const int k = p * 2;
+                double cond = valueSpiceMatrix[k];
+                double cap = valueSpiceMatrix[k + 1];
+                ig += cond * S[col];
+                ic += cap * S[col];
+                A[p] = cond + alpha * cap;
+            }
+            IG[row] += ig;
+            IC[row] += ic;
+            R[row] = D[k1] - ig;
+            H[row] = D[k1 + 1] - ic;
+#ifdef LONGROW_SIMD
         }
+#endif
     }
 #endif
 }

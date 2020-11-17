@@ -1,8 +1,7 @@
 #include "taskA.h"
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <cmath>
+#include "spmv.h"
+
+//#define LONGROW_SIMD
 
 void taskA(
     int* rowArray,
@@ -16,9 +15,17 @@ void taskA(
     // (6)
     for (int i = 0; i < rowArraySize; ++i) {
         const int node = rowArray[i];
-
-        for (int j = rowOffset[node]; j < rowOffset[node + 1]; ++j) {
-            Id[node] += valueNormalMatrix[j] * S[columnIndice[j]];
+#ifdef LONGROW_SIMD
+        if (rowOffset[node + 1] - rowOffset[node] >= 32) {
+            spmv_long_row_taskA(node, rowOffset, columnIndice, valueNormalMatrix, S, Id);
         }
+        else {
+#endif
+            for (int j = rowOffset[node]; j < rowOffset[node + 1]; ++j) {
+                Id[node] += valueNormalMatrix[j] * S[columnIndice[j]];
+            }
+#ifdef LONGROW_SIMD
+        }
+#endif
     }
 }

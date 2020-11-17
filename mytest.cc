@@ -11,10 +11,12 @@
 
 using namespace std;
 
+//#define BASELINE
+
 const string A_mat_filename = "A_mat.txt";
 const string B_mat_filename = "B_mat.txt";
 const string task_filename = "task.txt";
-const char* baseline_lib = "./baseline.so";
+const char* baseline_lib = "./libnaive.so";
 const char* my_lib = "./libcompetition.so";
 const char* calc_taskA_func_name = "matrix_calc_taskA";
 const char* calc_taskB_func_name = "matrix_calc_taskB";
@@ -88,6 +90,7 @@ calc_taskA_func_type* baseline_calc_taskA;
 calc_taskB_func_type* baseline_calc_taskB;
 void* baseline_so;
 
+#ifdef BASELINE
 __attribute__((constructor))
 void load_baseline() {
     baseline_so = dlopen(baseline_lib, RTLD_NOW);
@@ -99,6 +102,7 @@ __attribute__((destructor))
 void unload_baseline() {
     dlclose(baseline_so);
 }
+#endif
 
 template <class func_type, class... T>
 void call_func_from_lib(const char* lib_name, const char* func_name, double& runtime, T&&... args) {
@@ -134,10 +138,12 @@ void update_err(double baseline, double my, double& max_err) {
 }
 
 void test_A(istream& is) {
-    vector<TaskMatrixInfoA*> baseline_info;
-    vector<TaskMatrixInfoA*> my_info;
     vector<vector<int>> row_array;
+#ifdef BASELINE
+    vector<TaskMatrixInfoA*> baseline_info;
     vector<vector<double>> baseline_Id;
+#endif
+    vector<TaskMatrixInfoA*> my_info;
     vector<vector<double>> my_Id;
     for (auto& t : taskA_data) {
         int n;
@@ -146,7 +152,9 @@ void test_A(istream& is) {
         for (int& r : row_array.back()) {
             is >> r;
         }
+#ifdef BASELINE
         baseline_Id.emplace_back(t.m.n);
+#endif
         my_Id.emplace_back(t.m.n);
         int nnz = t.m.offset.back();
         total_mem_acc += sizeof(int[t.m.n + nnz]) + sizeof(double[t.m.n * 2 + nnz]);
@@ -154,6 +162,7 @@ void test_A(istream& is) {
     }
     int nn = (int) taskA_data.size();
     for (int i = 0; i < nn; ++i) {
+#ifdef BASELINE
         baseline_info.push_back(new TaskMatrixInfoA {
             .rowArray = row_array[i].data(),
             .rowOffset = taskA_data[i].m.offset.data(),
@@ -163,6 +172,7 @@ void test_A(istream& is) {
             .valueNormalMatrix = taskA_data[i].m.value.data(),
             .Id = baseline_Id[i].data()
         });
+#endif
         my_info.push_back(new TaskMatrixInfoA {
             .rowArray = row_array[i].data(),
             .rowOffset = taskA_data[i].m.offset.data(),
@@ -175,29 +185,37 @@ void test_A(istream& is) {
     }
     //call_func_from_lib<calc_taskA_func_type>(baseline_lib, calc_taskA_func_name, baseline_runtimeA, baseline_info.data(), nn);
     //call_func_from_lib<calc_taskA_func_type>(my_lib, calc_taskA_func_name, my_runtime, my_info.data(), nn);
-    //call_func(baseline_calc_taskA, baseline_runtimeA, baseline_info.data(), nn);
-    call_func(matrix_calc_taskA, my_runtimeA, my_info.data(), nn);
+#ifdef BASELINE
     double max_err = 0;
+    call_func(baseline_calc_taskA, baseline_runtimeA, baseline_info.data(), nn);
+#endif
+    call_func(matrix_calc_taskA, my_runtimeA, my_info.data(), nn);
     for (int i = 0; i < nn; ++i) {
+#ifdef BASELINE
         for (int j = 0; j < taskA_data[i].m.n; ++j) {
             update_err(baseline_info[i]->Id[j], my_info[i]->Id[j], max_err);
         }
         delete baseline_info[i];
+#endif
         delete my_info[i];
     }
-    //cerr << "TaskA max_err = " << scientific << max_err << endl;
+#ifdef BASELINE
+    cerr << "TaskA max_err = " << scientific << max_err << endl;
+#endif
 }
 
 void test_B(istream& is) {
-    vector<TaskMatrixInfoB*> baseline_info;
-    vector<TaskMatrixInfoB*> my_info;
     vector<vector<int>> row_array;
+#ifdef BASELINE
+    vector<TaskMatrixInfoB*> baseline_info;
     vector<vector<double>> baseline_A;
     vector<vector<double>> baseline_R;
     vector<vector<double>> baseline_H;
     vector<vector<double>> baseline_D;
     vector<vector<double>> baseline_IC;
     vector<vector<double>> baseline_IG;
+#endif
+    vector<TaskMatrixInfoB*> my_info;
     vector<vector<double>> my_A;
     vector<vector<double>> my_R;
     vector<vector<double>> my_H;
@@ -212,12 +230,14 @@ void test_B(istream& is) {
             is >> r;
         }
         auto tmp = randn_vector(t.m.n * 2);
+#ifdef BASELINE
         baseline_A.emplace_back(t.m.offset.back());
         baseline_R.emplace_back(t.m.n);
         baseline_H.emplace_back(t.m.n);
         baseline_D.push_back(tmp);
         baseline_IC.emplace_back(t.m.n);
         baseline_IG.emplace_back(t.m.n);
+#endif
         my_A.emplace_back(t.m.offset.back());
         my_R.emplace_back(t.m.n);
         my_H.emplace_back(t.m.n);
@@ -231,6 +251,7 @@ void test_B(istream& is) {
     int nn = (int) taskB_data.size();
     for (int i = 0; i < nn; ++i) {
         double alpha = myrand(gen);
+#ifdef BASELINE
         baseline_info.push_back(new TaskMatrixInfoB {
             .valueSpiceMatrix = taskB_data[i].m.value.data(),
             .rowOffset = taskB_data[i].m.offset.data(),
@@ -247,6 +268,7 @@ void test_B(istream& is) {
             .rowArraySize = (int) row_array[i].size(),
             .hdl = nullptr
         });
+#endif
         my_info.push_back(new TaskMatrixInfoB {
             .valueSpiceMatrix = taskB_data[i].m.value.data(),
             .rowOffset = taskB_data[i].m.offset.data(),
@@ -266,10 +288,13 @@ void test_B(istream& is) {
     }
     //call_func_from_lib<calc_taskB_func_type>(baseline_lib, calc_taskB_func_name, baseline_runtimeB, baseline_info.data(), nn);
     //call_func_from_lib<calc_taskB_func_type>(my_lib, calc_taskB_func_name, my_runtime, my_info.data(), nn);
-    //call_func(baseline_calc_taskB, baseline_runtimeB, baseline_info.data(), nn);
-    call_func(matrix_calc_taskB, my_runtimeB, my_info.data(), nn);
+#ifdef BASELINE
     double max_err = 0;
+    call_func(baseline_calc_taskB, baseline_runtimeB, baseline_info.data(), nn);
+#endif
+    call_func(matrix_calc_taskB, my_runtimeB, my_info.data(), nn);
     for (int i = 0; i < nn; ++i) {
+#ifdef BASELINE
         for (int j = 0; j < taskB_data[i].m.n; ++j) {
             update_err(baseline_info[i]->R[j], my_info[i]->R[j], max_err);
             update_err(baseline_info[i]->H[j], my_info[i]->H[j], max_err);
@@ -280,9 +305,12 @@ void test_B(istream& is) {
             update_err(baseline_info[i]->A[j], my_info[i]->A[j], max_err);
         }
         delete baseline_info[i];
+#endif
         delete my_info[i];
     }
-    //cerr << "TaskB max_err = " << scientific << max_err << endl;
+#ifdef BASELINE
+    cerr << "TaskB max_err = " << scientific << max_err << endl;
+#endif
 }
 
 void test_all_cases() {
@@ -304,7 +332,9 @@ void test_all_cases() {
             break;
         }
     }
-    //cerr << "baseline time: " << fixed << baseline_runtimeA << "s " << baseline_runtimeB << "s " << baseline_runtimeA + baseline_runtimeB << "s" << endl;
+#ifdef BASELINE
+    cerr << "baseline time: " << fixed << baseline_runtimeA << "s " << baseline_runtimeB << "s " << baseline_runtimeA + baseline_runtimeB << "s" << endl;
+#endif
     cerr << "my time:       " << fixed << my_runtimeA << "s " << my_runtimeB << "s " << my_runtimeA + my_runtimeB << "s" << endl;
     //cerr << "total_mem_acc: " << total_mem_acc << endl;
     //cerr << "total_float_op: " << total_float_op << endl;
