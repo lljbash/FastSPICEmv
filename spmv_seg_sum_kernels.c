@@ -7,7 +7,6 @@
 void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, const int *indices, const double *values) {
     const __m512i idxl = _mm512_set_epi64(14,12,10,8,6,4,2,0);
     const __m512i idxh = _mm512_set_epi64(15,13,11,9,7,5,3,1);
-    const __m512i idx7 = _mm512_set1_epi64(7);
     int head = (8 - (int)((((uintptr_t)values) >> 3) & 7)) & 7;
     int nnz = offsets[m];
     int n_tiles = (nnz - head) >> 4;
@@ -20,14 +19,14 @@ void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, con
     y_offsets[0] = --i;
     for(p = head, mi = 0, oi = 0; p < nnz - 15; p += 16, mi += MASKS_PER_TILE, oi += VEC_PER_TILE) {
         uint16_t seg_mask = 0, write_mask = 0;
-        __m512i fl, fh, fl_old, idx;
+        __m512i fl, fh, fl_old;
         int j, i1, i2;
 
         /* generate flags */
         for(j = i; offsets[j] <= p + 16; ++j) {
             int off = offsets[j] - (p + 1);
             if(off >= 0) {
-                write_mask = (1 << off) | write_mask;
+                write_mask = (uint16_t)(1 << off) | write_mask;
             }
         }
         masks[mi + WRITE_MASK_POS    ] = (__mmask8)(write_mask & 0xff);
@@ -40,7 +39,7 @@ void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, con
         for(j = i; offsets[j] < p + 16; ++j) {
             int off = offsets[j] - p;
             if(off >= 0) {
-                seg_mask = (1 << off) | seg_mask;
+                seg_mask = (uint16_t)(1 << off) | seg_mask;
             }
         }
 
@@ -92,7 +91,7 @@ void spmv_segmentedsum_simd_taskA(segmentedsum_t *seg, \
     int head = seg->head;
     int *y_offsets = seg->y_offsets;
     int nz_begin = offsets[begin_row], nz_end = offsets[end_row];
-    int p_begin = (nz_begin <= head) ? head : (nz_begin + (16 - ((nz_begin - head) & 15) & 15));
+    int p_begin = (nz_begin <= head) ? head : (nz_begin + (16 - (((nz_begin - head) & 15) & 15)));
     int p, t;
     __m512d sp = _mm512_setzero_pd();
 
@@ -166,7 +165,7 @@ void spmv_segmentedsum_simd_taskB(segmentedsum_t *seg, \
     int head = seg->head;
     int *y_offsets = seg->y_offsets;
     int nz_begin = offsets[begin_row], nz_end = offsets[end_row];
-    int p_begin = (nz_begin <= head) ? head : (nz_begin + (16 - ((nz_begin - head) & 15) & 15));
+    int p_begin = (nz_begin <= head) ? head : (nz_begin + (16 - (((nz_begin - head) & 15) & 15)));
     int p, t;
     __m512d sp0 = _mm512_setzero_pd(), sp1 = _mm512_setzero_pd();
 

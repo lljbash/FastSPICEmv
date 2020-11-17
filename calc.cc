@@ -9,20 +9,26 @@
 #include "taskB.h"
 #include "spmv.h"
 
-constexpr int SEP = 128;
-constexpr int SIMD_MIN_M = 32;
-constexpr int LONGROW_MIN_NNZ = 1000;
-constexpr int LONGROW_AVG_NNZ = LONGROW_MIN_NNZ / SEP;
+template<typename TaskMatrixInfo>
+struct Parameters;
 
-//std::vector<segmentedsum_t> segA;
-std::vector<int> mA;
-//std::vector<segmentedsum_t> segB;
-std::vector<int> mB;
+template<>
+struct Parameters<TaskMatrixInfoA> {
+    static constexpr int SEP = 128;
+    static constexpr int SIMD_MIN_M = 32;
+    static constexpr int LONGROW_MIN_NNZ = 1000;
+    static constexpr int LONGROW_AVG_NNZ = LONGROW_MIN_NNZ / SEP;
+};
 
-std::vector<std::vector<int>> subinitA;
-std::vector<std::vector<int>> subinitB;
+template<>
+struct Parameters<TaskMatrixInfoB> {
+    static constexpr int SEP = 128;
+    static constexpr int SIMD_MIN_M = 32;
+    static constexpr int LONGROW_MIN_NNZ = 1000;
+    static constexpr int LONGROW_AVG_NNZ = LONGROW_MIN_NNZ / SEP;
+};
 
-int jobs = 1;
+static int jobs = 1;
 
 __attribute__((constructor))
 void get_jobs() {
@@ -55,14 +61,14 @@ struct ExtraInfo {
     int calculation;
     enum {
         Distinct = 0,
-        Continumous,
+        Contiguous,
         Ones,
         Longrow
     } type;
 };
 
-void matrix_calc_taskA_subtask(const std::vector<const std::pair<TaskMatrixInfoA, ExtraInfo>*>& subtask) {
-//void matrix_calc_taskA_subtask(const std::pair<TaskMatrixInfoA, ExtraInfo>* subtask) {
+void matrix_calc_subtask(const std::vector<const std::pair<TaskMatrixInfoA, ExtraInfo>*>& subtask) {
+    //void matrix_calc_taskA_subtask(const std::pair<TaskMatrixInfoA, ExtraInfo>* subtask) {
     for (const auto& st : subtask) {
         const auto& task = st->first;
         const auto& info = st->second;
@@ -71,8 +77,8 @@ void matrix_calc_taskA_subtask(const std::vector<const std::pair<TaskMatrixInfoA
                 taskA(task.rowArray, task.rowOffset, task.rowArraySize, task.columnIndice,
                     task.S, task.valueNormalMatrix, task.Id);
                 break;
-            case ExtraInfo::Continumous:
-                //if (mA[info.id] < SIMD_MIN_M) {
+            case ExtraInfo::Contiguous:
+                //if (mA[info.id] < Parameters<TaskMatrixInfo>::SIMD_MIN_M) {
                     //spmv_rowwise(task.rowArray[0], task.rowArray[0] + task.rowArraySize,
                             //task.rowOffset, task.columnIndice, task.valueNormalMatrix,
                             //task.S, task.Id);
@@ -91,13 +97,12 @@ void matrix_calc_taskA_subtask(const std::vector<const std::pair<TaskMatrixInfoA
                         task.columnIndice, task.valueNormalMatrix, task.S, task.Id);
                 break;
             default:
-                printf("fuck\n");
+                fprintf(stderr, "fuck\n");
         }
     }
 }
 
-void matrix_calc_taskB_subtask(const std::vector<const std::pair<TaskMatrixInfoB, ExtraInfo>*>& subtask) {
-//void matrix_calc_taskB_subtask(const std::pair<TaskMatrixInfoB, ExtraInfo>* subtask) {
+void matrix_calc_subtask(const std::vector<const std::pair<TaskMatrixInfoB, ExtraInfo>*>& subtask) {
     for (const auto& st : subtask) {
         const auto& task = st->first;
         const auto& info = st->second;
@@ -108,7 +113,7 @@ void matrix_calc_taskB_subtask(const std::vector<const std::pair<TaskMatrixInfoB
                         task.IG, task.alpha, task.rowArray, task.rowArraySize);
 
                 break;
-            case ExtraInfo::Continumous:
+            case ExtraInfo::Contiguous:
                 //if (mB[info.id] < SIMD_MIN_M) {
                     //spmv_rowwise_taskB(task.rowArray[0], task.rowArray[0] + task.rowArraySize,
                             //task.rowOffset, task.columnIndice, task.valueSpiceMatrix, task.S,
@@ -130,15 +135,16 @@ void matrix_calc_taskB_subtask(const std::vector<const std::pair<TaskMatrixInfoB
                             task.D, task.IG, task.IC, task.R, task.H, task.A, task.alpha);
                 break;
             default:
-                printf("fuck\n");
+                fprintf(stderr, "fuck\n");
         }
     }
 }
 
 template <class TaskMatrixInfo>
-void init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
+int64_t init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
         std::vector<std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>>& subtasks,
         std::vector<int64_t>& calculations) {
+    int64_t total_calculations = 0;
     for (int i : ids) {
         subtasks[i].clear();
         calculations[i] = 0;
@@ -148,14 +154,14 @@ void init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
         //std::sort(row_array, row_array + row_size);
         int row_start = 0;
         while (row_start < row_size) {
-            int row_end = row_start + SEP;
+            int row_end = row_start + Parameters<TaskMatrixInfo>::SEP;
             if (row_end > row_size) {
                 row_end = row_size;
             }
             int sep = row_end - row_start;
             int nnz = row_offset[row_end] - row_offset[row_start];
             int dist = row_array[row_end - 1] - row_array[row_start] + 1;
-            if (sep != dist || sep < SEP) {
+            if (sep != dist || sep < Parameters<TaskMatrixInfo>::SEP) {
                 subtasks[i].push_back({*ptr[i], {i, sep + nnz / dist * sep, ExtraInfo::Distinct}});
             }
             else {
@@ -166,7 +172,7 @@ void init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
                     subtasks[i].push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Distinct}});
                 }
                 else {
-                    subtasks[i].push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Continumous}});
+                    subtasks[i].push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Contiguous}});
                 }
             }
             subtasks[i].back().first.rowArray += row_start;
@@ -174,76 +180,65 @@ void init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
             calculations[i] += subtasks[i].back().second.calculation;
             row_start = row_end;
         }
+        total_calculations += calculations[i];
+    }
+    return total_calculations;
+}
+
+template<typename TaskMatrixInfo>
+void init_matrix(TaskMatrixInfo** ptr, int size, std::vector<int>& m, std::vector<std::vector<int>>& subinit) {
+    int64_t total_m = 0;
+    m.resize(size);
+#pragma omp parallel for reduction(+:total_m)
+    for (int i = 0; i < size; ++i) {
+        int mi = guess_matrix_size(ptr[i]);
+        m[i] = mi;
+        total_m += mi;
+    }
+    subinit.resize(jobs);
+    int64_t m_per_job = total_m / jobs;
+    int current_job = 0;
+    int64_t current_m = 0;
+    for (int i = 0; i < size; ++i) {
+        if (current_job < jobs - 1 && current_m > m_per_job) {
+            ++current_job;
+            current_m = 0;
+        }
+        subinit[current_job].push_back(i);
+        current_m += m[i];
     }
 }
 
-void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
+template<typename TaskMatrixInfo>
+void matrix_calc(TaskMatrixInfo** ptr, int size) {
     static bool initialized = false;
+    //static std::vector<segmentedsum_t> segA;
+    static std::vector<int> mm;
+    static std::vector<std::vector<int>> subinit;
+    static std::vector<std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> subtasks;
+    static std::vector<int64_t> calculations;
+    static std::vector<std::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> stss;
+
     if (!initialized) {
         //segA.resize(size);
-        mA.resize(size);
-#pragma omp parallel for
-        for (int i = 0; i < size; ++i) {
-            mA[i] = guess_matrix_size(ptr[i]);
-            //if (mA[i] >= SIMD_MIN_M) {
-                //initialize_segmentedsum(&segA[i], mA[i], ptr[i]->rowOffset, ptr[i]->columnIndice, ptr[i]->valueNormalMatrix);
-            //}
-        }
-        subinitA.resize(jobs);
-        int64_t total_m = std::accumulate(mA.begin(), mA.end(), 0);
-        int64_t m_per_job = total_m / jobs;
-        int current_job = 0;
-        int64_t current_m = 0;
-        for (int i = 0; i < size; ++i) {
-            if (current_job < jobs - 1 && current_m > m_per_job) {
-                ++current_job;
-                current_m = 0;
-            }
-            subinitA[current_job].push_back(i);
-            current_m += mA[i];
-        }
+        init_matrix(ptr, size, mm, subinit);
         initialized = true;
     }
-
-    static std::vector<std::vector<std::pair<TaskMatrixInfoA, ExtraInfo>>> subtasks;
-    static std::vector<int64_t> calculations;
+    
     subtasks.resize(size);
     calculations.resize(size);
-#pragma omp parallel
-    {
-        int tid = omp_get_thread_num();
-        init_subtask(ptr, subinitA[tid], subtasks, calculations);
-    }
-
-#if 0
-    FILE* debug = fopen("debug.txt", "a");
-    for (const auto& sts : subtasks) {
-        for (const auto& st: sts) {
-            fprintf(debug, "%d:%d ", st.first.rowArraySize, st.second.type);
-        }
-        fprintf(debug, "\n");
-    }
-    fclose(debug);
-#endif
-
-    //static std::vector<const std::pair<TaskMatrixInfoA, ExtraInfo>*> stss;
-    //stss.clear();
-    //for (const auto& sts: subtasks) {
-        //for (const auto& st : sts) {
-            //stss.push_back(&st);
-        //}
-    //}
-//#pragma omp parallel for
-    //for (size_t i = 0; i < stss.size(); ++i) {
-        //matrix_calc_taskA_subtask(stss[i]);
-    //}
-
-    static std::vector<std::vector<const std::pair<TaskMatrixInfoA, ExtraInfo>*>> stss;
     stss.resize(jobs);
     for (int i = 0; i < jobs; ++i) {
         stss[i].clear();
     }
-    int64_t total_calculation = std::accumulate(calculations.begin(), calculations.end(), 0);
+
+    int64_t total_calculation = 0;
+#pragma omp parallel reduction(+:total_calculation)
+    {
+        int tid = omp_get_thread_num();
+        total_calculation += init_subtask(ptr, subinit[tid], subtasks, calculations);
+    }
+
     int64_t calculation_per_job = total_calculation / jobs;
     int current_job = 0;
     int64_t current_calculation = 0;
@@ -260,83 +255,14 @@ void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
 #pragma omp parallel
     {
         int tid = omp_get_thread_num();
-        matrix_calc_taskA_subtask(stss[tid]);
+        matrix_calc_subtask(stss[tid]);
     }
 }
 
-void matrix_calc_taskB(TaskMatrixInfoB** ptr, int size) {
-    static bool initialized = false;
-    if (!initialized) {
-        //segB.resize(size);
-        mB.resize(size);
-#pragma omp parallel for
-        for (int i = 0; i < size; ++i) {
-            mB[i] = guess_matrix_size(ptr[i]);
-            //if (mB[i] >= SIMD_MIN_M) {
-                //initialize_segmentedsum(&segB[i], mB[i], ptr[i]->rowOffset,
-                        //ptr[i]->columnIndice, ptr[i]->valueSpiceMatrix);
-            //}
-        }
-        subinitB.resize(jobs);
-        int64_t total_m = std::accumulate(mB.begin(), mB.end(), 0);
-        int64_t m_per_job = total_m / jobs;
-        int current_job = 0;
-        int64_t current_m = 0;
-        for (int i = 0; i < size; ++i) {
-            if (current_job < jobs - 1 && current_m > m_per_job) {
-                ++current_job;
-                current_m = 0;
-            }
-            subinitB[current_job].push_back(i);
-            current_m += mB[i];
-        }
-        initialized = true;
-    }
+void matrix_calc_taskA(TaskMatrixInfoA** calcDataList, int size) {
+    matrix_calc(calcDataList, size);
+}
 
-    static std::vector<std::vector<std::pair<TaskMatrixInfoB, ExtraInfo>>> subtasks;
-    static std::vector<int64_t> calculations;
-    subtasks.resize(size);
-    calculations.resize(size);
-#pragma omp parallel
-    {
-        int tid = omp_get_thread_num();
-        init_subtask(ptr, subinitB[tid], subtasks, calculations);
-    }
-
-    //static std::vector<const std::pair<TaskMatrixInfoB, ExtraInfo>*> stss;
-    //stss.clear();
-    //for (const auto& sts: subtasks) {
-        //for (const auto& st : sts) {
-            //stss.push_back(&st);
-        //}
-    //}
-//#pragma omp parallel for
-    //for (size_t i = 0; i < stss.size(); ++i) {
-        //matrix_calc_taskB_subtask(stss[i]);
-    //}
-
-    static std::vector<std::vector<const std::pair<TaskMatrixInfoB, ExtraInfo>*>> stss;
-    stss.resize(jobs);
-    for (int i = 0; i < jobs; ++i) {
-        stss[i].clear();
-    }
-    int64_t total_calculation = std::accumulate(calculations.begin(), calculations.end(), 0);
-    int64_t calculation_per_job = total_calculation / jobs;
-    int current_job = 0;
-    int64_t current_calculation = 0;
-    for (const auto& sts : subtasks) {
-        for (const auto& st : sts) {
-            if (current_job < jobs - 1 && current_calculation > calculation_per_job) {
-                ++current_job;
-                current_calculation = 0;
-            }
-            stss[current_job].push_back(&st);
-            current_calculation += st.second.calculation;
-        }
-    }
-#pragma omp parallel
-    {
-        int tid = omp_get_thread_num();
-        matrix_calc_taskB_subtask(stss[tid]);
-    }
+void matrix_calc_taskB(TaskMatrixInfoB** calcDataList, int size) {
+    matrix_calc(calcDataList, size);
 }
