@@ -7,6 +7,7 @@
 #include <omp.h>
 #include "taskA.h"
 #include "taskB.h"
+#include "padding.h"
 #include "spmv.h"
 
 template<typename TaskMatrixInfo>
@@ -28,18 +29,20 @@ struct Parameters<TaskMatrixInfoB> {
     static constexpr int LONGROW_AVG_NNZ = LONGROW_MIN_NNZ / SEP;
 };
 
-static int jobs = 1;
-
-__attribute__((constructor))
-void get_jobs() {
+struct NumberOfThreads {
+    int threads;
+    NumberOfThreads() {
 #pragma omp parallel
-    {
-#pragma omp single
         {
-            jobs = omp_get_max_threads();
+#pragma omp master
+            {
+                threads = omp_get_max_threads();
+            }
         }
     }
-}
+};
+
+static NumberOfThreads number_of;
 
 template <class TaskMatrixInfo>
 int guess_matrix_size(TaskMatrixInfo* info) {
@@ -140,14 +143,13 @@ void matrix_calc_subtask(const std::vector<const std::pair<TaskMatrixInfoB, Extr
     }
 }
 
-template <class TaskMatrixInfo>
-int64_t init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
-        std::vector<std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>>& subtasks,
-        std::vector<int64_t>& calculations) {
+template <typename TaskMatrixInfo>
+int64_t init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids, 
+        std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>& subtasks) {
     int64_t total_calculations = 0;
+    subtasks.clear();
     for (int i : ids) {
-        subtasks[i].clear();
-        calculations[i] = 0;
+        int64_t calculations = 0;
         const int row_size = ptr[i]->rowArraySize;
         int* row_array = ptr[i]->rowArray;
         const int* row_offset = ptr[i]->rowOffset;
@@ -162,45 +164,44 @@ int64_t init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
             int nnz = row_offset[row_end] - row_offset[row_start];
             int dist = row_array[row_end - 1] - row_array[row_start] + 1;
             if (sep != dist || sep < Parameters<TaskMatrixInfo>::SEP) {
-                subtasks[i].push_back({*ptr[i], {i, sep + nnz / dist * sep, ExtraInfo::Distinct}});
+                subtasks.push_back({*ptr[i], {i, sep + nnz / dist * sep, ExtraInfo::Distinct}});
             }
             else {
                 if (nnz == sep) {
-                    subtasks[i].push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Ones}});
+                    subtasks.push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Ones}});
                 }
                 else if (nnz > sep * 10) {
-                    subtasks[i].push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Distinct}});
+                    subtasks.push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Distinct}});
                 }
                 else {
-                    subtasks[i].push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Contiguous}});
+                    subtasks.push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Contiguous}});
                 }
             }
-            subtasks[i].back().first.rowArray += row_start;
-            subtasks[i].back().first.rowArraySize = sep;
-            calculations[i] += subtasks[i].back().second.calculation;
+            subtasks.back().first.rowArray += row_start;
+            subtasks.back().first.rowArraySize = sep;
+            calculations += subtasks.back().second.calculation;
             row_start = row_end;
         }
-        total_calculations += calculations[i];
+        total_calculations += calculations;
     }
     return total_calculations;
 }
 
-template<typename TaskMatrixInfo>
-void init_matrix(TaskMatrixInfo** ptr, int size, std::vector<int>& m, std::vector<std::vector<int>>& subinit) {
+template <typename TaskMatrixInfo>
+void init_matrix(TaskMatrixInfo** ptr, int size, std::vector<std::vector<int>>& subinit) {
+    std::vector<int> m (size);
     int64_t total_m = 0;
-    m.resize(size);
 #pragma omp parallel for reduction(+:total_m)
     for (int i = 0; i < size; ++i) {
         int mi = guess_matrix_size(ptr[i]);
         m[i] = mi;
         total_m += mi;
     }
-    subinit.resize(jobs);
-    int64_t m_per_job = total_m / jobs;
+    int64_t m_per_job = total_m / number_of.threads;
     int current_job = 0;
     int64_t current_m = 0;
     for (int i = 0; i < size; ++i) {
-        if (current_job < jobs - 1 && current_m > m_per_job) {
+        if (current_job < number_of.threads - 1 && current_m > m_per_job) {
             ++current_job;
             current_m = 0;
         }
@@ -209,42 +210,36 @@ void init_matrix(TaskMatrixInfo** ptr, int size, std::vector<int>& m, std::vecto
     }
 }
 
-template<typename TaskMatrixInfo>
+template <typename TaskMatrixInfo>
 void matrix_calc(TaskMatrixInfo** ptr, int size) {
     static bool initialized = false;
     //static std::vector<segmentedsum_t> segA;
-    static std::vector<int> mm;
-    static std::vector<std::vector<int>> subinit;
-    static std::vector<std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> subtasks;
-    static std::vector<int64_t> calculations;
-    static std::vector<std::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> stss;
+    static std::vector<std::vector<int>> subinit (number_of.threads);
+    static padded::vector<std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> subtasks (number_of.threads); // concurrent write
+    static std::vector<std::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> stss (number_of.threads);
 
     if (!initialized) {
         //segA.resize(size);
-        init_matrix(ptr, size, mm, subinit);
+        init_matrix(ptr, size, subinit);
         initialized = true;
     }
     
-    subtasks.resize(size);
-    calculations.resize(size);
-    stss.resize(jobs);
-    for (int i = 0; i < jobs; ++i) {
-        stss[i].clear();
-    }
-
     int64_t total_calculation = 0;
 #pragma omp parallel reduction(+:total_calculation)
     {
         int tid = omp_get_thread_num();
-        total_calculation += init_subtask(ptr, subinit[tid], subtasks, calculations);
+        total_calculation += init_subtask(ptr, subinit[tid], subtasks[tid]);
     }
 
-    int64_t calculation_per_job = total_calculation / jobs;
+    int64_t calculation_per_job = total_calculation / number_of.threads;
     int current_job = 0;
     int64_t current_calculation = 0;
+    for (int i = 0; i < number_of.threads; ++i) {
+        stss[i].clear();
+    }
     for (const auto& sts : subtasks) {
         for (const auto& st : sts) {
-            if (current_job < jobs - 1 && current_calculation > calculation_per_job) {
+            if (current_job < number_of.threads - 1 && current_calculation > calculation_per_job) {
                 ++current_job;
                 current_calculation = 0;
             }

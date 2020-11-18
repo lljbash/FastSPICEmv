@@ -4,7 +4,15 @@
 #define WRITE_MASK_POS 5
 #define VEC_PER_TILE 2
 
-void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, const int *indices, const double *values) {
+#ifdef CPP17_ALIGNED_NEW
+#define MALLOC(size) malloc(size)
+#define FREE(size) free(size)
+#else // already used _mm_malloc
+#define MALLOC(size) _mm_malloc(size,8)
+#define FREE(size) _mm_free(size)
+#endif
+
+int initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, const int *indices, const double *values) {
     const __m512i idxl = _mm512_set_epi64(14,12,10,8,6,4,2,0);
     const __m512i idxh = _mm512_set_epi64(15,13,11,9,7,5,3,1);
     int head = (8 - (int)((((uintptr_t)values) >> 3) & 7)) & 7;
@@ -12,8 +20,15 @@ void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, con
     int n_tiles = (nnz - head) >> 4;
     int i, p, mi, oi;
     
-    __mmask8 *masks = (__mmask8*)malloc(sizeof(__mmask8) * n_tiles * MASKS_PER_TILE);
-    int *y_offsets = (int*)malloc(sizeof(int) * n_tiles * VEC_PER_TILE + 1);
+    __mmask8 *masks = (__mmask8*)MALLOC(sizeof(__mmask8) * n_tiles * MASKS_PER_TILE);
+    if(masks == NULL) {
+        return -1;
+    }
+    int *y_offsets = (int*)MALLOC(sizeof(int) * n_tiles * VEC_PER_TILE + 1);
+    if(masks == NULL) {
+        FREE(masks);
+        return -1;
+    }
 
     for(i = 1; offsets[i] <= head; ++i);
     y_offsets[0] = --i;
@@ -75,11 +90,12 @@ void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, con
     seg->y_offsets = y_offsets;
     seg->head = head;
     seg->n_tiles = n_tiles;
+    return 0;
 }
 
 void finalize_segmentedsum(segmentedsum_t *seg) {
-    free(seg->masks);
-    free(seg->y_offsets);
+    FREE(seg->masks);
+    FREE(seg->y_offsets);
 }
 
 void spmv_segmentedsum_simd_taskA(segmentedsum_t *seg, \
