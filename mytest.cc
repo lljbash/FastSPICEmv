@@ -11,6 +11,10 @@
 
 using namespace std;
 
+#ifndef BASELINE
+#undef BASELINE_TEST
+#endif
+
 //#define BASELINE
 
 const string A_mat_filename = "A_mat.txt";
@@ -191,7 +195,7 @@ void test_A(istream& is) {
 #endif
     call_func(matrix_calc_taskA, my_runtimeA, my_info.data(), nn);
     for (int i = 0; i < nn; ++i) {
-#ifdef BASELINE
+#ifdef BASELINE_TEST
         for (int j = 0; j < taskA_data[i].m.n; ++j) {
             update_err(baseline_info[i]->Id[j], my_info[i]->Id[j], max_err);
         }
@@ -199,7 +203,7 @@ void test_A(istream& is) {
 #endif
         delete my_info[i];
     }
-#ifdef BASELINE
+#ifdef BASELINE_TEST
     cerr << "TaskA max_err = " << scientific << max_err << endl;
 #endif
 }
@@ -294,7 +298,7 @@ void test_B(istream& is) {
 #endif
     call_func(matrix_calc_taskB, my_runtimeB, my_info.data(), nn);
     for (int i = 0; i < nn; ++i) {
-#ifdef BASELINE
+#ifdef BASELINE_TEST
         for (int j = 0; j < taskB_data[i].m.n; ++j) {
             update_err(baseline_info[i]->R[j], my_info[i]->R[j], max_err);
             update_err(baseline_info[i]->H[j], my_info[i]->H[j], max_err);
@@ -308,7 +312,7 @@ void test_B(istream& is) {
 #endif
         delete my_info[i];
     }
-#ifdef BASELINE
+#ifdef BASELINE_TEST
     cerr << "TaskB max_err = " << scientific << max_err << endl;
 #endif
 }

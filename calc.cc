@@ -155,7 +155,7 @@ void init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
             int sep = row_end - row_start;
             int nnz = row_offset[row_end] - row_offset[row_start];
             int dist = row_array[row_end - 1] - row_array[row_start] + 1;
-            if (sep != dist || sep < SEP) {
+            if (sep != dist || sep < SIMD_MIN_M) {
                 subtasks[i].push_back({*ptr[i], {i, sep + nnz / dist * sep, ExtraInfo::Distinct}});
             }
             else {
