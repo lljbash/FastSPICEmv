@@ -1,8 +1,8 @@
 #ifndef SPMV_H_
 #define SPMV_H_
 
-#include<stdint.h>
-#include<immintrin.h>
+#include <stdint.h>
+#include <immintrin.h>
 
 // controls whether the addition (A = v0 + alpha * v1) is fused in the rowwise_simd taskB kernel
 //#define FUSED_LOOP
@@ -109,7 +109,7 @@ void spmv_rowwise_simd_taskA(int b, int e, const int *offsets, const int *indice
 void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
     const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
 
-void initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, const int *indices, const double *values);
+int initialize_segmentedsum(segmentedsum_t *seg, int m, const int *offsets, const int *indices, const double *values);
 void finalize_segmentedsum(segmentedsum_t *seg);
 void spmv_segmentedsum_simd_taskA(segmentedsum_t *seg, \
     int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y);
