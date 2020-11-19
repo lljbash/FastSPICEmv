@@ -45,7 +45,8 @@ class Vector {
     size_t s;
 public:
 #ifdef CPP17_ALIGNED_NEW // `Object` is marked as `alignas(align)`, so C++17 should automatically call the aligned `new` operator
-    Obj* data() { return obj; }
+    Obj*       data()       { return obj; }
+    const Obj* data() const { return obj; }
     Vector(size_t size) : s(size) {
         obj = new Obj[size]; 
     }
@@ -53,7 +54,8 @@ public:
         delete[] obj;
     }
 #else
-    Obj* data() { return std::launder(obj); }
+    Obj*       data()       { return std::launder(obj); }
+    const Obj* data() const { return std::launder(obj); }
     Vector(size_t size) : s(size) {
         obj = (Obj*) _mm_malloc(sizeof(Obj) * size, align);
         new (obj) Obj[size];

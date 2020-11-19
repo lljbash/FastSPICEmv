@@ -202,6 +202,34 @@ inline int64_t init_subtask(TaskMatrixInfo** ptr, const prealloc::vector<int>& i
     return total_calculations;
 }
 
+/*
+template <typename TaskMatrixInfo, typename M>
+inline void print_memory_use(TaskMatrixInfo** ptr, int size, int total_max_subtask, const M& m, int thread_num) {
+    constexpr bool isA = sizeof(TaskMatrixInfo) == sizeof(TaskMatrixInfoA);
+    constexpr char type = isA ? 'A' : 'B';
+    constexpr size_t bytes_per_nonzero = isA ? (sizeof(double) + sizeof(int)) : (sizeof(double) * 3 + sizeof(int));
+    constexpr size_t bytes_per_row = isA ? (sizeof(double) * 2) : (sizeof(double) * 6); // assume the matrix is square
+    size_t input_mat = 0, input_vec = 0;
+    for(int i = 0; i < size; ++i) {
+        input_mat += sizeof(TaskMatrixInfo) + sizeof(TaskMatrixInfo*);
+        input_mat += sizeof(int) * ptr[i]->rowArraySize;
+        input_mat += sizeof(int) * (m[i] + 1);
+        input_mat += bytes_per_nonzero * ptr[i]->rowOffset[m[i]];
+        input_vec += bytes_per_row * m[i];
+    }
+    size_t allocated_perthread = sizeof(int) * size
+        + sizeof(TaskInfo<TaskMatrixInfo>*) * total_max_subtask
+        + sizeof(prealloc::vector<int>) 
+        + sizeof(prealloc::vector<TaskInfo<TaskMatrixInfo>>)
+        + sizeof(prealloc::vector<const TaskInfo<TaskMatrixInfo>*>);
+    size_t allocated_global = sizeof(TaskInfo<TaskMatrixInfo>) * total_max_subtask;
+    fprintf(stderr, "task %c with %d threads:\ninput data%10lu bytes (%10lu bytes for matrices,%10lu bytes for vectors)\n"\
+                    "allocated%11lu bytes (%10lu bytes global,%16lu bytes per thread)\n", 
+        type, thread_num, input_mat + input_vec, input_mat, input_vec, 
+        allocated_perthread * thread_num + allocated_global, allocated_global, allocated_perthread);
+}
+*/
+
 template <typename TaskMatrixInfo, typename Subinit, typename Subtasks, typename STSS>
 inline void init_matrix(TaskMatrixInfo** ptr, int size, Subinit& subinit, Subtasks& subtasks, STSS& stss) {
     padded::vector<int> m (size);
