@@ -145,6 +145,28 @@ int64_t init_subtask(TaskMatrixInfo** ptr, const prealloc::vector<int>& ids, Sub
         //std::sort(row_array, row_array + row_size);
         int row_start = 0;
         while (row_start < row_size) {
+#ifdef ALIGN_Y
+            int row_newstart = row_start;
+            for (auto mis = misalign(ptr[i], ptr[i]->rowArray[row_newstart]); mis != 0; ) {
+                row_newstart += static_cast<int>(mis);
+                if (row_newstart > row_size) {
+                    row_newstart = row_size;
+                    break;
+                }
+            }
+            if (row_start < row_newstart) {
+                int sep = row_newstart - row_start;
+                int nnz = row_offset[row_newstart] - row_offset[row_start];
+                int dist = row_array[row_newstart - 1] - row_array[row_start] + 1;
+                subtasks.push_back({ptr[i], row_array + row_start, sep, i, sep + nnz / dist * sep,
+                        TaskInfo<TaskMatrixInfo>::Distinct});
+                row_start = row_newstart;
+            }
+            if (row_start >= row_size) {
+                break;
+            }
+            // now Y[row_array[row_start]] is aligned
+#endif
             int row_end = row_start + Parameters<TaskMatrixInfo>::SEP;
             if (row_end > row_size) {
                 row_end = row_size;
@@ -209,7 +231,11 @@ void init_matrix(TaskMatrixInfo** ptr, int size, Subinit& subinit, Subtasks& sub
         int tid = omp_get_thread_num();
         int max_subtask = 0;
         for (int id : subinit[tid]) {
-            max_subtask += m[id] / Parameters<TaskMatrixInfo>::SEP + 2;
+#ifdef ALIGN_Y
+            max_subtask += (m[id] / Parameters<TaskMatrixInfo>::SEP + 1) * 2;
+#else
+            max_subtask += m[id] / Parameters<TaskMatrixInfo>::SEP + 1;
+#endif
         }
         subtasks[tid].alloc(max_subtask);
         total_max_subtask += max_subtask;
