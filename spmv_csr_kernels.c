@@ -5,7 +5,7 @@
 // b : row begin, e : row end
 void spmv_rowwise_taskA(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y) {
     for(int i = b; i < e; ++i) {
-        double v = 0.0;
+        double v = y[i];
         for(int p = offsets[i]; p < offsets[i + 1]; ++p) {
             v += values[p] * x[indices[p]];
         }
@@ -50,7 +50,7 @@ void spmv_rowwise_simd_taskA(int b, int e, const int *offsets, const int *indice
     }
     /* remainder */
     for(; i < e; ++i) {
-        double v = 0.0;
+        double v = y[i];
         for(int p = offsets[i]; p < offsets[i + 1]; ++p) {
             v += values[p] * x[indices[p]];
         }

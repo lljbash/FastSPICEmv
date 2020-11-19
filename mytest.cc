@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <vector>
 #include <string>
+#include <functional>
 #include <dlfcn.h>
 #include "stopwatch.hpp"
 #include "calc.h"
@@ -25,15 +26,15 @@ const char* my_lib = "./libcompetition.so";
 const char* calc_taskA_func_name = "matrix_calc_taskA";
 const char* calc_taskB_func_name = "matrix_calc_taskB";
 
-random_device rd{};
-//mt19937 gen{rd()};
+//mt19937 gen{random_device{}()};
 mt19937 gen{16666};
-normal_distribution<> randn;
-uniform_real_distribution<> myrand{0., 1.};
+auto randn = bind(normal_distribution<>(), ref(gen));
+auto randu = bind(uniform_real_distribution<>(0.0, 1.0), ref(gen));
 
 auto randn_vector(int n) {
     vector<double> vec;
-    generate_n(back_inserter(vec), n, [&](){ return randn(gen); });
+    vec.reserve(n);
+    generate_n(back_inserter(vec), n, randn);
     return vec;
 }
 
@@ -156,10 +157,11 @@ void test_A(istream& is) {
         for (int& r : row_array.back()) {
             is >> r;
         }
+        auto Id = randn_vector(t.m.n);
 #ifdef BASELINE
-        baseline_Id.emplace_back(t.m.n);
+        baseline_Id.push_back(Id);
 #endif
-        my_Id.emplace_back(t.m.n);
+        my_Id.push_back(move(Id));
         int nnz = t.m.offset.back();
         total_mem_acc += sizeof(int[t.m.n + nnz]) + sizeof(double[t.m.n * 2 + nnz]);
         total_float_op += nnz * 2;
@@ -233,28 +235,32 @@ void test_B(istream& is) {
         for (int& r : row_array.back()) {
             is >> r;
         }
-        auto tmp = randn_vector(t.m.n * 2);
+        auto D = randn_vector(t.m.n * 2);
+        auto R = randn_vector(t.m.n);
+        auto H = randn_vector(t.m.n);
+        auto IG = randn_vector(t.m.n);
+        auto IC = randn_vector(t.m.n);
 #ifdef BASELINE
         baseline_A.emplace_back(t.m.offset.back());
-        baseline_R.emplace_back(t.m.n);
-        baseline_H.emplace_back(t.m.n);
-        baseline_D.push_back(tmp);
-        baseline_IC.emplace_back(t.m.n);
-        baseline_IG.emplace_back(t.m.n);
+        baseline_R.push_back(R);
+        baseline_H.push_back(H);
+        baseline_D.push_back(D);
+        baseline_IC.push_back(IC);
+        baseline_IG.push_back(IG);
 #endif
         my_A.emplace_back(t.m.offset.back());
-        my_R.emplace_back(t.m.n);
-        my_H.emplace_back(t.m.n);
-        my_D.push_back(tmp);
-        my_IC.emplace_back(t.m.n);
-        my_IG.emplace_back(t.m.n);
+        my_R.push_back(move(R));
+        my_H.push_back(move(H));
+        my_D.push_back(move(D));
+        my_IC.push_back(move(IC));
+        my_IG.push_back(move(IG));
         int nnz = t.m.offset.back();
         total_mem_acc += sizeof(int[t.m.n + nnz]) + sizeof(double[t.m.n * 7 + nnz * 3]);
         total_float_op += nnz * 5;
     }
     int nn = (int) taskB_data.size();
     for (int i = 0; i < nn; ++i) {
-        double alpha = myrand(gen);
+        double alpha = randu();
 #ifdef BASELINE
         baseline_info.push_back(new TaskMatrixInfoB {
             .valueSpiceMatrix = taskB_data[i].m.value.data(),
