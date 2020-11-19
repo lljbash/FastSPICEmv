@@ -50,12 +50,6 @@ static NumberOfThreads number_of;
  *         ^
  *     first_row
  * then misalign(matrix, first_row) returns 5;
- * 
- * example 1: 
- * | y y y y y y y y | y y y y y y y y |
- *                 ^
- *             first_row
- * then misalign(matrix, first_row) returns 1;
  */
 inline intptr_t misalign(double* y) {  return (- (reinterpret_cast<intptr_t>(y) >> 3)) & 7; }
 inline intptr_t misalign(TaskMatrixInfoA* matrix, int first_row) { return misalign(matrix->Id + first_row); }
@@ -76,45 +70,36 @@ int guess_matrix_size(TaskMatrixInfo* info) {
     return n;
 }
 
-struct ExtraInfo {
+template<typename TaskMatrixInfo>
+struct TaskInfo {
+    const TaskMatrixInfo *matrix;
+    int *rowArray;
+    int rowArraySize;
     int id;
     int calculation;
     enum {
         Distinct = 0,
         Contiguous,
-        Ones,
-        Longrow
+        Ones
     } type;
 };
 
-void matrix_calc_subtask(const prealloc::vector<const std::pair<TaskMatrixInfoA, ExtraInfo>*>& subtask) {
-    //void matrix_calc_taskA_subtask(const std::pair<TaskMatrixInfoA, ExtraInfo>* subtask) {
-    for (const auto& st : subtask) {
-        const auto& task = st->first;
-        const auto& info = st->second;
+void matrix_calc_subtask(const prealloc::vector<const TaskInfo<TaskMatrixInfoA>*>& subtask) {
+    for (auto st : subtask) {
+        const auto& task = *st->matrix;
+        const auto& info = *st;
         switch (info.type) {
-            case ExtraInfo::Distinct:
-                taskA(task.rowArray, task.rowOffset, task.rowArraySize, task.columnIndice,
+            case TaskInfo<TaskMatrixInfoA>::Distinct:
+                taskA(info.rowArray, task.rowOffset, info.rowArraySize, task.columnIndice,
                     task.S, task.valueNormalMatrix, task.Id);
                 break;
-            case ExtraInfo::Contiguous:
-                //if (mA[info.id] < Parameters<TaskMatrixInfo>::SIMD_MIN_M) {
-                    //spmv_rowwise(task.rowArray[0], task.rowArray[0] + task.rowArraySize,
-                            //task.rowOffset, task.columnIndice, task.valueNormalMatrix,
-                            //task.S, task.Id);
-                //}
-                //else {
-                    spmv_rowwise_simd_taskA(task.rowArray[0],
-                            task.rowArray[0] + task.rowArraySize, task.rowOffset, task.columnIndice,
-                            task.valueNormalMatrix, task.S, task.Id);
-                    //spmv_segmentedsum_simd(&segA[info.id], task.rowArray[0],
-                            //task.rowArray[0] + task.rowArraySize, task.rowOffset, task.columnIndice,
-                            //task.valueNormalMatrix, task.S, task.Id);
-                //}
+            case TaskInfo<TaskMatrixInfoA>::Contiguous:
+                spmv_rowwise_simd_taskA(info.rowArray[0], info.rowArray[0] + info.rowArraySize, 
+                    task.rowOffset, task.columnIndice, task.valueNormalMatrix, task.S, task.Id);
                 break;
-            case ExtraInfo::Ones:
-                spmv_row_1_taskA(task.rowArray[0], task.rowArray[0] + task.rowArraySize, task.rowOffset,
-                        task.columnIndice, task.valueNormalMatrix, task.S, task.Id);
+            case TaskInfo<TaskMatrixInfoA>::Ones:
+                spmv_row_1_taskA(info.rowArray[0], info.rowArray[0] + info.rowArraySize, 
+                    task.rowOffset, task.columnIndice, task.valueNormalMatrix, task.S, task.Id);
                 break;
             default:
                 fprintf(stderr, "fuck\n");
@@ -122,35 +107,24 @@ void matrix_calc_subtask(const prealloc::vector<const std::pair<TaskMatrixInfoA,
     }
 }
 
-void matrix_calc_subtask(const prealloc::vector<const std::pair<TaskMatrixInfoB, ExtraInfo>*>& subtask) {
-    for (const auto& st : subtask) {
-        const auto& task = st->first;
-        const auto& info = st->second;
+void matrix_calc_subtask(const prealloc::vector<const TaskInfo<TaskMatrixInfoB>*>& subtask) {
+    for (auto st : subtask) {
+        const auto& task = *st->matrix;
+        const auto& info = *st;
         switch (info.type) {
-            case ExtraInfo::Distinct:
+            case TaskInfo<TaskMatrixInfoB>::Distinct:
                 taskB(task.valueSpiceMatrix, task.rowOffset, task.columnIndice,
                         task.A, task.S, task.R, task.H, task.D, task.IC,
-                        task.IG, task.alpha, task.rowArray, task.rowArraySize);
+                        task.IG, task.alpha, info.rowArray, info.rowArraySize);
 
                 break;
-            case ExtraInfo::Contiguous:
-                //if (mB[info.id] < SIMD_MIN_M) {
-                    //spmv_rowwise_taskB(task.rowArray[0], task.rowArray[0] + task.rowArraySize,
-                            //task.rowOffset, task.columnIndice, task.valueSpiceMatrix, task.S,
-                            //task.D, task.IG, task.IC, task.R, task.H, task.A, task.alpha);
-                //}
-                //else {
-                    spmv_rowwise_simd_taskB(task.rowArray[0], task.rowArray[0] + task.rowArraySize,
+            case TaskInfo<TaskMatrixInfoB>::Contiguous:
+                spmv_rowwise_simd_taskB(info.rowArray[0], info.rowArray[0] + info.rowArraySize, 
                             task.rowOffset, task.columnIndice, task.valueSpiceMatrix, task.S,
                             task.D, task.IG, task.IC, task.R, task.H, task.A, task.alpha);
-                    //spmv_segmentedsum_simd_taskB(&segB[info.id], task.rowArray[0],
-                            //task.rowArray[0] + task.rowArraySize,
-                            //task.rowOffset, task.columnIndice, task.valueSpiceMatrix, task.S,
-                            //task.D, task.IG, task.IC, task.R, task.H, task.A, task.alpha);
-                //}
                 break;
-            case ExtraInfo::Ones:
-                spmv_row_1_taskB(task.rowArray[0], task.rowArray[0] + task.rowArraySize,
+            case TaskInfo<TaskMatrixInfoB>::Ones:
+                spmv_row_1_taskB(info.rowArray[0], info.rowArray[0] + info.rowArraySize, 
                             task.rowOffset, task.columnIndice, task.valueSpiceMatrix, task.S,
                             task.D, task.IG, task.IC, task.R, task.H, task.A, task.alpha);
                 break;
@@ -160,13 +134,11 @@ void matrix_calc_subtask(const prealloc::vector<const std::pair<TaskMatrixInfoB,
     }
 }
 
-template <typename TaskMatrixInfo>
-int64_t init_subtask(TaskMatrixInfo** ptr, const prealloc::vector<int>& ids,
-        prealloc::vector<std::pair<TaskMatrixInfo, ExtraInfo>>& subtasks) {
+template <typename TaskMatrixInfo, typename Subtasks>
+int64_t init_subtask(TaskMatrixInfo** ptr, const prealloc::vector<int>& ids, Subtasks& subtasks) {
     int64_t total_calculations = 0;
     subtasks.clear();
     for (int i : ids) {
-        int64_t calculations = 0;
         const int row_size = ptr[i]->rowArraySize;
         int* row_array = ptr[i]->rowArray;
         const int* row_offset = ptr[i]->rowOffset;
@@ -181,47 +153,44 @@ int64_t init_subtask(TaskMatrixInfo** ptr, const prealloc::vector<int>& ids,
             int nnz = row_offset[row_end] - row_offset[row_start];
             int dist = row_array[row_end - 1] - row_array[row_start] + 1;
             if (sep != dist || sep < Parameters<TaskMatrixInfo>::SIMD_MIN_M) {
-                subtasks.push_back({*ptr[i], {i, sep + nnz / dist * sep,
-                        ExtraInfo::Distinct}});
+                subtasks.push_back({ptr[i], row_array + row_start, sep, i, sep + nnz / dist * sep, 
+                        TaskInfo<TaskMatrixInfo>::Distinct});
             }
             else {
                 if (nnz == sep) {
-                    subtasks.push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Ones}});
+                    subtasks.push_back({ptr[i], row_array + row_start, sep, i, sep + nnz, 
+                        TaskInfo<TaskMatrixInfo>::Ones});
                 }
                 else if (nnz > sep * 10) {
-                    subtasks.push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Distinct}});
+                    subtasks.push_back({ptr[i], row_array + row_start, sep, i, sep + nnz, 
+                        TaskInfo<TaskMatrixInfo>::Distinct});
                 }
                 else {
-                    subtasks.push_back({*ptr[i], {i, sep + nnz, ExtraInfo::Contiguous}});
+                    subtasks.push_back({ptr[i], row_array + row_start, sep, i, sep + nnz, 
+                        TaskInfo<TaskMatrixInfo>::Contiguous});
                 }
             }
-            subtasks.back().first.rowArray += row_start;
-            subtasks.back().first.rowArraySize = sep;
-            calculations += subtasks.back().second.calculation;
+            total_calculations += subtasks.back().calculation;
             row_start = row_end;
         }
-        total_calculations += calculations;
     }
     return total_calculations;
 }
 
-template <typename TaskMatrixInfo>
-void init_matrix(TaskMatrixInfo** ptr, int size,
-        padded::vector<prealloc::vector<int>>& subinit,
-        padded::vector<prealloc::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> &subtasks,
-        padded::vector<prealloc::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> &stss) {
+template <typename TaskMatrixInfo, typename Subinit, typename Subtasks, typename STSS>
+void init_matrix(TaskMatrixInfo** ptr, int size, Subinit& subinit, Subtasks& subtasks, STSS& stss) {
     padded::vector<int> m (size);
     int64_t total_m = 0;
-#pragma omp parallel for reduction(+:total_m)
-    for (int i = 0; i < size; ++i) {
-        int mi = guess_matrix_size(ptr[i]);
-        m[i] = mi;
-        total_m += mi;
-    }
-#pragma omp parallel
+#pragma omp parallel reduction(+:total_m)
     {
         int tid = omp_get_thread_num();
         subinit[tid].alloc(size);
+#pragma omp for
+        for (int i = 0; i < size; ++i) {
+            int mi = guess_matrix_size(ptr[i]);
+            m[i] = mi;
+            total_m += mi;
+        }
     }
     int64_t m_per_job = total_m / number_of.threads;
     int current_job = 0;
@@ -257,8 +226,8 @@ void matrix_calc(TaskMatrixInfo** ptr, int size) {
     static bool initialized = false;
     //static std::vector<segmentedsum_t> segA;
     static padded::vector<prealloc::vector<int>> subinit (number_of.threads);
-    static padded::vector<prealloc::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> subtasks (number_of.threads); // concurrent write
-    static padded::vector<prealloc::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> stss (number_of.threads);
+    static padded::vector<prealloc::vector<TaskInfo<TaskMatrixInfo>>> subtasks (number_of.threads); // concurrent write
+    static padded::vector<prealloc::vector<const TaskInfo<TaskMatrixInfo>*>> stss (number_of.threads);
 
     if (!initialized) {
         //segA.resize(size);
@@ -286,7 +255,7 @@ void matrix_calc(TaskMatrixInfo** ptr, int size) {
                 current_calculation = 0;
             }
             stss[current_job].push_back(&st);
-            current_calculation += st.second.calculation;
+            current_calculation += st.calculation;
         }
     }
 #pragma omp parallel
