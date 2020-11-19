@@ -1,5 +1,5 @@
 CXX ?= g++
-SRCS = calc.cc taskA.cc taskB.cc spmv_csr_kernels.c spmv_seg_sum_kernels.c spmv_special_kernels.c
+SRCS = calc.cc taskA.cc taskB.cc spmv_csr_kernels.c spmv_special_kernels.c #spmv_seg_sum_kernels.c 
 LIBNAME = libcompetition.so
 CXXOPTS = -O3 -DNDEBUG -fopenmp -march=native
 #CXXOPTS = -O3 -DNDEBUG -march=native
