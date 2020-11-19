@@ -84,7 +84,7 @@ typedef struct {
 #define PACKI0123(x, y)     _mm512_mask_alignr_epi64(x, MASK4567, y, y, 4)
 #define PACKI4567(x, y)     _mm512_mask_alignr_epi64(y, MASK0123, x, x, 4)
 
-#ifdef ALIGN_Y
+#ifdef ALIGN_Y // aligned Id and IG
 #define LOAD_PD(arg) _mm512_load_pd(arg)
 #define STORE_PD(arg0, arg1) _mm512_store_pd(arg0, arg1)
 #else

@@ -36,21 +36,7 @@ void spmv_rowwise_simd_taskA(int b, int e, const int *offsets, const int *indice
     const __m256i step = _mm256_set1_epi32(1), zeroi = _mm256_setzero_si256();
     const __m512d zerod = _mm512_setzero_pd();
     int i;
-#ifdef ALIGN_Y
-    const int head = b + ((8 - (int)((((uintptr_t)(y + b)) >> 3) & 7)) & 7); // make ld/st y 
-    const int head_end = (head < e) ? head : e;
-    /* remainder */
-    for(i = b; i < head_end; ++i) {
-        double v = 0.0;
-        for(int p = offsets[i]; p < offsets[i + 1]; ++p) {
-            v += values[p] * x[indices[p]];
-        }
-        y[i] = v;
-    }
-#else
-    const int head = b;
-#endif
-    for(i = head; i < e - 7; i += 8) {
+    for(i = b; i < e - 7; i += 8) {
         __m512d v = LOAD_PD(y + i);
         __m256i p = _mm256_loadu_si256((const __m256i*)(offsets + i));
         __m256i pend = _mm256_loadu_si256((const __m256i*)(offsets + i + 1));
@@ -98,7 +84,7 @@ void spmv_rowwise_simd_taskB(int b, int e, const int *offsets, const int *indice
 #endif
         }
 
-        _mm512_storeu_pd(IG + i, _mm512_add_pd(_mm512_loadu_pd(IG + i), v0));
+        STORE_PD        (IG + i, _mm512_add_pd(LOAD_PD        (IG + i), v0));
         _mm512_storeu_pd(IC + i, _mm512_add_pd(_mm512_loadu_pd(IC + i), v1));
         __m512d d0 = _mm512_loadu_pd(D + i * 2), d1 = _mm512_loadu_pd(D + i * 2 + 8);
         _mm512_storeu_pd(R + i, _mm512_sub_pd(PACKD0246(d0, d1), v0));

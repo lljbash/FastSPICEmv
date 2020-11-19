@@ -44,6 +44,23 @@ struct NumberOfThreads {
 
 static NumberOfThreads number_of;
 
+/*
+ * example 1: 
+ * | y y y y y y y y | y y y y y y y y |
+ *         ^
+ *     first_row
+ * then misalign(matrix, first_row) returns 5;
+ * 
+ * example 1: 
+ * | y y y y y y y y | y y y y y y y y |
+ *                 ^
+ *             first_row
+ * then misalign(matrix, first_row) returns 1;
+ */
+inline intptr_t misalign(double* y) {  return (- (reinterpret_cast<intptr_t>(y) >> 3)) & 7; }
+inline intptr_t misalign(TaskMatrixInfoA* matrix, int first_row) { return misalign(matrix->Id + first_row); }
+inline intptr_t misalign(TaskMatrixInfoB* matrix, int first_row) { return misalign(matrix->IG + first_row); }
+
 template <class TaskMatrixInfo>
 int guess_matrix_size(TaskMatrixInfo* info) {
     int n = info->rowArray[info->rowArraySize - 1] + 1;

@@ -5,18 +5,7 @@
 void spmv_row_1_taskA(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, double *y) {
     int offset_0 = offsets[b] - b;
     int i;
-#ifdef ALIGN_Y
-    const int head = b + ((8 - (int)((((uintptr_t)(y + b)) >> 3) & 7)) & 7); // make ld/st y aligned
-    const int head_end = (head < e) ? head : e;
-    /* remainder */
-    for(i = b; i < head_end; ++i) {
-        const int p = offset_0 + i;
-        y[i] += values[p] * x[indices[p]];
-    }
-#else
-    const int head = b;
-#endif
-    for(i = head; i < e - 15; i += 16) {
+    for(i = b; i < e - 15; i += 16) {
         const int p = offset_0 + i;
         __m512d v0 = LOAD_PD(y + i);
         __m512d v1 = LOAD_PD(y + i + 8);
@@ -61,9 +50,9 @@ void spmv_row_1_taskB(int b, int e, const int *offsets, const int *indices, cons
         __m512d v1b = _mm512_mul_pd(valby, x_gthrb);
         _mm512_storeu_pd(A + p,     _mm512_fmadd_pd(alpha_v, valay, valax));
         _mm512_storeu_pd(A + p + 8, _mm512_fmadd_pd(alpha_v, valby, valbx));
-        _mm512_storeu_pd(IG + i,     _mm512_add_pd(_mm512_loadu_pd(IG + i    ), v0a));
+        STORE_PD        (IG + i,     _mm512_add_pd(LOAD_PD        (IG + i    ), v0a));
+        STORE_PD        (IG + i + 8, _mm512_add_pd(LOAD_PD        (IG + i + 8), v0b));
         _mm512_storeu_pd(IC + i,     _mm512_add_pd(_mm512_loadu_pd(IC + i    ), v1a));
-        _mm512_storeu_pd(IG + i + 8, _mm512_add_pd(_mm512_loadu_pd(IG + i + 8), v0b));
         _mm512_storeu_pd(IC + i + 8, _mm512_add_pd(_mm512_loadu_pd(IC + i + 8), v1b));
         __m512d d0a = _mm512_loadu_pd(D + i * 2     ), d1a = _mm512_loadu_pd(D + i * 2 + 8);
         __m512d d0b = _mm512_loadu_pd(D + i * 2 + 16), d1b = _mm512_loadu_pd(D + i * 2 + 24);
