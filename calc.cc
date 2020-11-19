@@ -1,13 +1,13 @@
 #include "calc.h"
 #include <cstdio>
 #include <cstdlib>
-#include <vector>
 #include <algorithm>
 #include <numeric>
 #include <omp.h>
 #include "taskA.h"
 #include "taskB.h"
 #include "padding.h"
+#include "prealloc.h"
 #include "spmv.h"
 
 template<typename TaskMatrixInfo>
@@ -70,7 +70,7 @@ struct ExtraInfo {
     } type;
 };
 
-void matrix_calc_subtask(const std::vector<const std::pair<TaskMatrixInfoA, ExtraInfo>*>& subtask) {
+void matrix_calc_subtask(const prealloc::vector<const std::pair<TaskMatrixInfoA, ExtraInfo>*>& subtask) {
     //void matrix_calc_taskA_subtask(const std::pair<TaskMatrixInfoA, ExtraInfo>* subtask) {
     for (const auto& st : subtask) {
         const auto& task = st->first;
@@ -105,7 +105,7 @@ void matrix_calc_subtask(const std::vector<const std::pair<TaskMatrixInfoA, Extr
     }
 }
 
-void matrix_calc_subtask(const std::vector<const std::pair<TaskMatrixInfoB, ExtraInfo>*>& subtask) {
+void matrix_calc_subtask(const prealloc::vector<const std::pair<TaskMatrixInfoB, ExtraInfo>*>& subtask) {
     for (const auto& st : subtask) {
         const auto& task = st->first;
         const auto& info = st->second;
@@ -144,8 +144,8 @@ void matrix_calc_subtask(const std::vector<const std::pair<TaskMatrixInfoB, Extr
 }
 
 template <typename TaskMatrixInfo>
-int64_t init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
-        std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>& subtasks) {
+int64_t init_subtask(TaskMatrixInfo** ptr, const prealloc::vector<int>& ids,
+        prealloc::vector<std::pair<TaskMatrixInfo, ExtraInfo>>& subtasks) {
     int64_t total_calculations = 0;
     subtasks.clear();
     for (int i : ids) {
@@ -189,14 +189,22 @@ int64_t init_subtask(TaskMatrixInfo** ptr, const std::vector<int>& ids,
 }
 
 template <typename TaskMatrixInfo>
-void init_matrix(TaskMatrixInfo** ptr, int size, std::vector<std::vector<int>>& subinit) {
-    std::vector<int> m (size);
+void init_matrix(TaskMatrixInfo** ptr, int size,
+        padded::vector<prealloc::vector<int>>& subinit,
+        padded::vector<prealloc::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> &subtasks,
+        padded::vector<prealloc::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> &stss) {
+    padded::vector<int> m (size);
     int64_t total_m = 0;
 #pragma omp parallel for reduction(+:total_m)
     for (int i = 0; i < size; ++i) {
         int mi = guess_matrix_size(ptr[i]);
         m[i] = mi;
         total_m += mi;
+    }
+#pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        subinit[tid].alloc(size);
     }
     int64_t m_per_job = total_m / number_of.threads;
     int current_job = 0;
@@ -209,19 +217,35 @@ void init_matrix(TaskMatrixInfo** ptr, int size, std::vector<std::vector<int>>& 
         subinit[current_job].push_back(i);
         current_m += m[i];
     }
+    int total_max_subtask = 0;
+#pragma omp parallel reduction(+:total_max_subtask)
+    {
+        int tid = omp_get_thread_num();
+        int max_subtask = 0;
+        for (int id : subinit[tid]) {
+            max_subtask += m[id] / Parameters<TaskMatrixInfo>::SEP + 2;
+        }
+        subtasks[tid].alloc(max_subtask);
+        total_max_subtask += max_subtask;
+    }
+#pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        stss[tid].alloc(total_max_subtask);
+    }
 }
 
 template <typename TaskMatrixInfo>
 void matrix_calc(TaskMatrixInfo** ptr, int size) {
     static bool initialized = false;
     //static std::vector<segmentedsum_t> segA;
-    static std::vector<std::vector<int>> subinit (number_of.threads);
-    static padded::vector<std::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> subtasks (number_of.threads); // concurrent write
-    static std::vector<std::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> stss (number_of.threads);
+    static padded::vector<prealloc::vector<int>> subinit (number_of.threads);
+    static padded::vector<prealloc::vector<std::pair<TaskMatrixInfo, ExtraInfo>>> subtasks (number_of.threads); // concurrent write
+    static padded::vector<prealloc::vector<const std::pair<TaskMatrixInfo, ExtraInfo>*>> stss (number_of.threads);
 
     if (!initialized) {
         //segA.resize(size);
-        init_matrix(ptr, size, subinit);
+        init_matrix(ptr, size, subinit, subtasks, stss);
         initialized = true;
     }
 
