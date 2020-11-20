@@ -1,5 +1,4 @@
 #include <tbb/global_control.h>
-#include <tbb/task_arena.h>
 #include <tbb/task_group.h>
 #include <tbb/parallel_for.h>
 #include "calc.h"
@@ -18,18 +17,14 @@ struct Parameters;
 
 template<>
 struct Parameters<TaskMatrixInfoA> {
-    static constexpr int SEP = 128;
+    static constexpr int SEP = 512;
     static constexpr int SIMD_MIN_M = 32;
-    static constexpr int LONGROW_MIN_NNZ = 1000;
-    static constexpr int LONGROW_AVG_NNZ = LONGROW_MIN_NNZ / SEP;
 };
 
 template<>
 struct Parameters<TaskMatrixInfoB> {
-    static constexpr int SEP = 128;
+    static constexpr int SEP = 512;
     static constexpr int SIMD_MIN_M = 32;
-    static constexpr int LONGROW_MIN_NNZ = 1000;
-    static constexpr int LONGROW_AVG_NNZ = LONGROW_MIN_NNZ / SEP;
 };
 
 /* overload task A and task B */
@@ -102,19 +97,12 @@ void calc(TaskMatrixInfo* ptr) {
         int sep = row_end - row_start;
         int nnz = row_offset[row_end] - row_offset[row_start];
         int dist = row_array[row_end - 1] - row_array[row_start] + 1;
-        if (sep != dist || sep < Parameters<TaskMatrixInfo>::SIMD_MIN_M) {
+        if (sep != dist || sep < Parameters<TaskMatrixInfo>::SIMD_MIN_M || nnz > sep * 10) {
             tasks.run([=]() { kernel_0(ptr, row_start, sep); });
-        }
-        else {
-            if (nnz == sep) {
-                tasks.run([=] { kernel_2(ptr, row_start, sep); });
-            }
-            else if (nnz > sep * 10) {
-                tasks.run([=] { kernel_0(ptr, row_start, sep); });
-            }
-            else {
-                tasks.run([=] { kernel_1(ptr, row_start, sep); });
-            }
+        } else if (nnz == sep) {
+            tasks.run([=] { kernel_2(ptr, row_start, sep); });
+        } else {
+            tasks.run([=] { kernel_1(ptr, row_start, sep); });
         }
         row_start = row_end;
     }
@@ -123,17 +111,17 @@ void calc(TaskMatrixInfo* ptr) {
 
 } // namespace FastSPICEmv
 
-#ifdef HALF_THREADS
-#define ACTIVE(t_num) (t_num >> 1)
+#ifdef THREAD_LIMIT
+#define ACTIVE(t_num) (t_num < THREAD_LIMIT) ? t_num : THREAD_LIMIT
 #else
 #define ACTIVE(t_num) t_num
 #endif
 #define GET_NUM_THREADS tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
+#define USE_NUM_THREADS(x,f) tbb::task_arena(x, 0).execute(f)
 
 void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
     auto num_threads = GET_NUM_THREADS;
-    tbb::task_arena active_threads(ACTIVE(num_threads));
-    active_threads.execute([=] {
+    USE_NUM_THREADS(ACTIVE(num_threads), [=] {
         tbb::parallel_for(0, size, [=](int i) {
             FastSPICEmv::calc(ptr[i]);
         }, tbb::static_partitioner());
@@ -142,8 +130,7 @@ void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
 
 void matrix_calc_taskB(TaskMatrixInfoB** ptr, int size) {
     auto num_threads = GET_NUM_THREADS;
-    tbb::task_arena active_threads(ACTIVE(num_threads));
-    active_threads.execute([=] {
+    USE_NUM_THREADS(ACTIVE(num_threads), [=] {
         tbb::parallel_for(0, size, [=](int i) {
             FastSPICEmv::calc(ptr[i]);
         }, tbb::static_partitioner());
