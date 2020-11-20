@@ -70,10 +70,10 @@ void calc(TaskMatrixInfo* ptr) {
     const int row_size = ptr->rowArraySize;
 #ifdef PARALLEL_PARITITION
 
-    tbb::parallel_for(tbb::blocked_range<int>(0, (row_size - 1) / Parameters<TaskMatrixInfo>::SEP + 1),
-        [=](const tbb::blocked_range<int>& range) {
-            int row_start = range.begin() * Parameters<TaskMatrixInfo>::SEP;
-            int row_end = std::min(range.end() * Parameters<TaskMatrixInfo>::SEP, ptr->rowArraySize);
+    tbb::parallel_for(0, (row_size - 1) / Parameters<TaskMatrixInfo>::SEP + 1,
+        [=](int i) {
+            int row_start = i * Parameters<TaskMatrixInfo>::SEP;
+            int row_end = std::min((i + 1) * Parameters<TaskMatrixInfo>::SEP, ptr->rowArraySize);
             int sep = row_end - row_start;
             int nnz = ptr->rowOffset[row_end] - ptr->rowOffset[row_start];
             int dist = ptr->rowArray[row_end - 1] - ptr->rowArray[row_start] + 1;
@@ -84,7 +84,7 @@ void calc(TaskMatrixInfo* ptr) {
             } else {
                 kernel_1(ptr, row_start, sep);
             }
-        }, tbb::simple_partitioner()
+        }
     );
 
 #else
@@ -131,10 +131,6 @@ void calc(TaskMatrixInfo* ptr) {
 #endif
 }
 
-
-
-} // namespace FastSPICEmv
-
 #ifdef THREAD_LIMIT
 #define ACTIVE(t_num) std::min(t_num, static_cast<decltype(t_num)>(THREAD_LIMIT))
 #else
@@ -143,20 +139,23 @@ void calc(TaskMatrixInfo* ptr) {
 #define GET_NUM_THREADS tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
 #define USE_NUM_THREADS(x,f) tbb::task_arena(x, 0).execute(f)
 
-void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
+template <typename TaskMatrixInfo>
+inline void matrix_calc(TaskMatrixInfo** ptr, int size) {
     auto num_threads = GET_NUM_THREADS;
     USE_NUM_THREADS(ACTIVE(num_threads), [=] {
         tbb::parallel_for(0, size, [=](int i) {
-            FastSPICEmv::calc(ptr[i]);
+            calc(ptr[i]);
         }, tbb::static_partitioner());
     });
 }
 
+} // namespace FastSPICEmv
+
+
+void matrix_calc_taskA(TaskMatrixInfoA** ptr, int size) {
+    FastSPICEmv::matrix_calc(ptr, size);
+}
+
 void matrix_calc_taskB(TaskMatrixInfoB** ptr, int size) {
-    auto num_threads = GET_NUM_THREADS;
-    USE_NUM_THREADS(ACTIVE(num_threads), [=] {
-        tbb::parallel_for(0, size, [=](int i) {
-            FastSPICEmv::calc(ptr[i]);
-        }, tbb::static_partitioner());
-    });
+    FastSPICEmv::matrix_calc(ptr, size);
 }
