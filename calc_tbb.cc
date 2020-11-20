@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <tbb/global_control.h>
+#include <tbb/task_arena.h>
 #include <tbb/task_group.h>
 #include <tbb/parallel_for.h>
 #include "calc.h"
@@ -18,13 +20,13 @@ struct Parameters;
 template<>
 struct Parameters<TaskMatrixInfoA> {
     static constexpr int SEP = 512;
-    static constexpr int SIMD_MIN_M = 32;
+    static constexpr int SIMD_MIN_M = 16;
 };
 
 template<>
 struct Parameters<TaskMatrixInfoB> {
     static constexpr int SEP = 512;
-    static constexpr int SIMD_MIN_M = 32;
+    static constexpr int SIMD_MIN_M = 16;
 };
 
 /* overload task A and task B */
@@ -65,10 +67,29 @@ inline void kernel_2(TaskMatrixInfoB* ptr, int start, int len) {
 
 template <typename TaskMatrixInfo>
 void calc(TaskMatrixInfo* ptr) {
-    tbb::task_group tasks;
     const int row_size = ptr->rowArraySize;
-    int* row_array = ptr->rowArray;
-    const int* row_offset = ptr->rowOffset;
+#ifdef PARALLEL_PARITITION
+
+    tbb::parallel_for(tbb::blocked_range<int>(0, (row_size - 1) / Parameters<TaskMatrixInfo>::SEP + 1),
+        [=](const tbb::blocked_range<int>& range) {
+            int row_start = range.begin() * Parameters<TaskMatrixInfo>::SEP;
+            int row_end = std::min(range.end() * Parameters<TaskMatrixInfo>::SEP, ptr->rowArraySize);
+            int sep = row_end - row_start;
+            int nnz = ptr->rowOffset[row_end] - ptr->rowOffset[row_start];
+            int dist = ptr->rowArray[row_end - 1] - ptr->rowArray[row_start] + 1;
+            if (sep != dist || sep < Parameters<TaskMatrixInfo>::SIMD_MIN_M || nnz > sep * 10) {
+                kernel_0(ptr, row_start, sep);
+            } else if (nnz == sep) {
+                kernel_2(ptr, row_start, sep);
+            } else {
+                kernel_1(ptr, row_start, sep);
+            }
+        }, tbb::simple_partitioner()
+    );
+
+#else
+
+    tbb::task_group tasks;
     int row_start = 0;
     while (row_start < row_size) {
 #ifdef ALIGN_Y
@@ -90,29 +111,32 @@ void calc(TaskMatrixInfo* ptr) {
         }
         // now Y[row_array[row_start]] is aligned
 #endif
-        int row_end = row_start + Parameters<TaskMatrixInfo>::SEP;
-        if (row_end > row_size) {
-            row_end = row_size;
-        }
-        int sep = row_end - row_start;
-        int nnz = row_offset[row_end] - row_offset[row_start];
-        int dist = row_array[row_end - 1] - row_array[row_start] + 1;
-        if (sep != dist || sep < Parameters<TaskMatrixInfo>::SIMD_MIN_M || nnz > sep * 10) {
-            tasks.run([=]() { kernel_0(ptr, row_start, sep); });
-        } else if (nnz == sep) {
-            tasks.run([=] { kernel_2(ptr, row_start, sep); });
-        } else {
-            tasks.run([=] { kernel_1(ptr, row_start, sep); });
-        }
+        int row_end = std::min(row_start + Parameters<TaskMatrixInfo>::SEP, row_size);
+        tasks.run([=] {
+            int sep = row_end - row_start;
+            int nnz = ptr->rowOffset[row_end] - ptr->rowOffset[row_start];
+            int dist = ptr->rowArray[row_end - 1] - ptr->rowArray[row_start] + 1;
+            if (sep != dist || sep < Parameters<TaskMatrixInfo>::SIMD_MIN_M || nnz > sep * 10) {
+                kernel_0(ptr, row_start, sep);
+            } else if (nnz == sep) {
+                kernel_2(ptr, row_start, sep);
+            } else {
+                kernel_1(ptr, row_start, sep);
+            }
+        });
         row_start = row_end;
     }
     tasks.wait();
+
+#endif
 }
+
+
 
 } // namespace FastSPICEmv
 
 #ifdef THREAD_LIMIT
-#define ACTIVE(t_num) (t_num < THREAD_LIMIT) ? t_num : THREAD_LIMIT
+#define ACTIVE(t_num) std::min(t_num, static_cast<decltype(t_num)>(THREAD_LIMIT))
 #else
 #define ACTIVE(t_num) t_num
 #endif
