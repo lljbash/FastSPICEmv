@@ -24,6 +24,8 @@ typedef struct {
 
 
 /* rename symbols */
+#define taskA                        FastSPICEmv_task_A
+#define taskB                        FastSPICEmv_task_B
 #define spmv_rowwise_taskA           FastSPICEmv_rw_s_A
 #define spmv_rowwise_taskB           FastSPICEmv_rw_s_B
 #define spmv_rowwise_simd_taskA      FastSPICEmv_rw_v_A
@@ -137,6 +139,32 @@ void spmv_segmentedsum_taskA(int b, int e, const int *offsets, const int *indice
 void spmv_segmentedsum_taskB(int b, int e, const int *offsets, const int *indices, const double *values, const double *x, \
     const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
 #endif
+
+void taskA(
+    int* rowArray,
+    const int* rowOffset,
+    int rowArraySize,
+    const int* columnIndice,
+    const double* S,
+    const double* valueNormalMatrix,
+    double* Id
+);
+
+void taskB(
+    const double* valueSpiceMatrix,
+    const int* rowOffset,
+    const int* columnIndice,
+    double* A,
+    double* S,
+    double* R,
+    double* H,
+    const double* D,
+    double* IC,
+    double* IG,
+    double alpha,
+    int* rowArray,
+    int rowArraySize
+);
 
 #ifdef __cplusplus
 }
