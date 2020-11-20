@@ -131,22 +131,28 @@ void calc(TaskMatrixInfo* ptr) {
 #endif
 }
 
-#ifdef THREAD_LIMIT
-#define ACTIVE(t_num) std::min(t_num, static_cast<decltype(t_num)>(THREAD_LIMIT))
-#else
-#define ACTIVE(t_num) t_num
+#if defined(THREAD_LIMIT) && defined(GLOBAL_THREADS)
+#define TNUM tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
+tbb::global_control global_thread_control(tbb::global_control::max_allowed_parallelism,
+    std::min(TNUM, static_cast<decltype(TNUM)>(THREAD_LIMIT)));
 #endif
-#define GET_NUM_THREADS tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
-#define USE_NUM_THREADS(x,f) tbb::task_arena(x, 0).execute(f)
 
 template <typename TaskMatrixInfo>
 inline void matrix_calc(TaskMatrixInfo** ptr, int size) {
-    auto num_threads = GET_NUM_THREADS;
-    USE_NUM_THREADS(ACTIVE(num_threads), [=] {
+
+#if defined(THREAD_LIMIT) && !defined(GLOBAL_THREADS)
+    auto num_threads = tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
+    tbb::task_arena arena(std::min(num_threads, static_cast<decltype(num_threads)>(THREAD_LIMIT)), 0); 
+    arena.execute([=] {
+#endif
+
         tbb::parallel_for(0, size, [=](int i) {
             calc(ptr[i]);
         }, tbb::static_partitioner());
+
+#if defined(THREAD_LIMIT) && !defined(GLOBAL_THREADS)
     });
+#endif
 }
 
 } // namespace FastSPICEmv
