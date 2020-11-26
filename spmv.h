@@ -126,8 +126,8 @@ void spmv_row_1_taskB(int b, int e, const int *offsets, const int *indices, cons
 
 // long row
 // row: the index of the long row
-void spmv_long_row_taskA(int row, const int *offsets, const int *indices, const double *values, const double *x, double *y);
-void spmv_long_row_taskB(int row, const int *offsets, const int *indices, const double *values, const double *x, \
+inline void spmv_long_row_taskA(int row, const int *offsets, const int *indices, const double *values, const double *x, double *y);
+inline void spmv_long_row_taskB(int row, const int *offsets, const int *indices, const double *values, const double *x, \
     const double *D, double *IG, double *IC, double *R, double *H, double *A, double alpha);
 
 #ifdef SCALAR_KERNELS
